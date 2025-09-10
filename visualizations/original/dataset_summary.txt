@@ -1,0 +1,16 @@
+Dataset Summary Report
+==================================================
+
+Total Images: 992
+Total Annotations: 9139
+Average Annotations per Image: 9.21
+Number of Categories: 2
+
+Category Breakdown:
+--------------------
+insect: 9139 annotations (100.0%)
+
+Image Size Analysis:
+--------------------
+Width range: 4032 - 4032 pixels
+Height range: 2268 - 2268 pixels

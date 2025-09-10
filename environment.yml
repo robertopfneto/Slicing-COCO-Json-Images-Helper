@@ -1,0 +1,12 @@
+name: create-dataset
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - pillow>=9.0.0
+  - numpy>=1.21.0
+  - pip:
+    - pillow>=9.0.0
+    - numpy>=1.21.0
