@@ -1,8 +1,8 @@
 
-insects - v13 esse aqui max
+insects - v16 2025-09-10 5:24pm
 ==============================
 
-This dataset was exported via roboflow.com on August 20, 2025 at 6:31 PM GMT
+This dataset was exported via roboflow.com on September 10, 2025 at 9:25 PM GMT
 
 Roboflow is an end-to-end computer vision platform that helps you
 * collaborate with your team on computer vision projects
