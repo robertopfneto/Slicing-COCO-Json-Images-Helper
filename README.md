@@ -54,6 +54,47 @@ python app.py \
   --validate
 ```
 
+### Cross-validation tiling for large images
+
+For high-resolution datasets (e.g., 4032×2268 insect imagery) that require tiling **and** image-level cross-validation, use the dedicated pipeline:
+
+```bash
+python build_crossval_tiles.py \
+  --input ./dataset/all/train \
+  --output ./output_crossval \
+  --tile-size 640 640 \
+  --overlap 0 \
+  --min-ioa 0.30 \
+  --folds 5 \
+  --seed 42 \
+  --overwrite
+```
+
+This command will:
+
+- Slice every source image into 640×640 tiles, anchoring border tiles to preserve the full field of view.
+- Keep only bounding boxes whose Intersection-over-Area (IoA) with the tile is at least 0.30, with coordinates clipped to tile bounds.
+- Share the tile images across folds (via symlinks or copies) to avoid duplicating disk usage.
+- Build GroupKFold (k=5) splits **grouped by original image id**, guaranteeing that tiles from one image never leak into other folds.
+- Save per-fold COCO annotations under `output_crossval/folds/fold_*/{train,val,test}/_annotations.coco.json` along with tile id lists for hard-negative mining.
+- Produce manifests in `output_crossval/manifests/` that map every tile back to its source image and original annotations, enabling reconstruction and quality checks.
+
+### Visualizing a tiling example
+
+Need a quick illustration similar to the screenshot in the issue description? Generate a side-by-side figure that overlays the tile grid on the original image, highlights a chosen tile, and shows its cropped view with projected boxes:
+
+```bash
+python generate_tiling_example.py \
+  --input ./dataset/all/train \
+  --image-file 100_jpg.rf.6abfdba36004e71c82c893d2028804c9.jpg \
+  --tile-size 640 640 \
+  --overlap 0 \
+  --min-ioa 0.30 \
+  --output ./visualizations/tiling_examples
+```
+
+The script saves a JPG figure plus a JSON summary describing the highlighted tile, including IoA values for each retained annotation. Leave `--image-file` unset to automatically pick the first annotated image.
+
 ### Configuration via Environment Variables
 
 ```bash

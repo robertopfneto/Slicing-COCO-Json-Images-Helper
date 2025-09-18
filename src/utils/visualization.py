@@ -144,15 +144,23 @@ class BoundingBoxVisualizer:
         
         return img_with_tiles
 
-    def create_comparison_view(self, original_img: Image.Image, tiled_img: Image.Image,
-                              original_annotations: List[CocoAnnotation], 
-                              tiled_annotations: List[CocoAnnotation],
-                              categories: dict, tile_offset: Tuple[int, int]) -> Image.Image:
+    def create_comparison_view(
+        self,
+        original_img: Image.Image,
+        tiled_img: Image.Image,
+        original_annotations: List[CocoAnnotation],
+        tiled_annotations: List[CocoAnnotation],
+        categories: dict,
+        tile_offset: Tuple[int, int],
+        tile_size: Tuple[int, int],
+        overlap: int = 0,
+        tile_label: Optional[str] = None,
+    ) -> Image.Image:
         """Create a side-by-side comparison of original and tiled images with boxes."""
-        
+
         # Draw bounding boxes and tile boundaries on original image
         # First draw tile boundaries, then bounding boxes on top
-        orig_with_tiles = self.draw_tile_boundaries(original_img, (512, 512), 0, tile_offset)
+        orig_with_tiles = self.draw_tile_boundaries(original_img, tile_size, overlap, tile_offset)
         orig_with_boxes = self.draw_bounding_boxes(orig_with_tiles, original_annotations, categories)
         
         # Draw only bounding boxes on tiled image
@@ -172,9 +180,14 @@ class BoundingBoxVisualizer:
             title_font = ImageFont.load_default()
         
         # Add titles
+        tile_info = f"Offset ({tile_offset[0]}, {tile_offset[1]})"
+        tile_dims = f"Tile {tile_size[0]}x{tile_size[1]}"
+        right_title = f"Tiled Image | {tile_info} | {tile_dims}"
+        if tile_label:
+            right_title = f"{right_title} | {tile_label}"
+
         draw.text((10, 10), "Original Image", fill='black', font=title_font)
-        draw.text((orig_with_boxes.width + 30, 10), 
-                 f"Tiled Image (Offset: {tile_offset})", fill='black', font=title_font)
+        draw.text((orig_with_boxes.width + 30, 10), right_title, fill='black', font=title_font)
         
         # Paste images
         comparison.paste(orig_with_boxes, (10, 50))

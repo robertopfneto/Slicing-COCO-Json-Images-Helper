@@ -32,6 +32,7 @@ class CocoAnnotation:
     area: float
     bbox: List[float]  # [x, y, width, height]
     iscrowd: int = 0
+    extra: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -81,12 +82,22 @@ class CocoDataset:
         )
     
     def to_dict(self) -> Dict[str, Any]:
+        """Convert the dataset to a standard COCO dictionary."""
+
+        def filter_fields(obj, allowed_fields):
+            result = {}
+            for field_name in allowed_fields:
+                value = getattr(obj, field_name, None)
+                if value is not None:
+                    result[field_name] = value
+            return result
+
         return {
-            'info': self.info.__dict__ if self.info else {},
-            'licenses': [license.__dict__ for license in self.licenses],
-            'images': [img.__dict__ for img in self.images],
-            'annotations': [ann.__dict__ for ann in self.annotations],
-            'categories': [cat.__dict__ for cat in self.categories]
+            'info': filter_fields(self.info, ['year', 'version', 'description', 'contributor', 'url', 'date_created']) if self.info else {},
+            'licenses': [filter_fields(license, ['id', 'name', 'url']) for license in self.licenses],
+            'images': [filter_fields(img, ['id', 'width', 'height', 'file_name', 'license', 'flickr_url', 'coco_url', 'date_captured']) for img in self.images],
+            'annotations': [filter_fields(ann, ['id', 'image_id', 'category_id', 'segmentation', 'area', 'bbox', 'iscrowd']) for ann in self.annotations],
+            'categories': [filter_fields(cat, ['id', 'name', 'supercategory']) for cat in self.categories]
         }
     
     def save_json(self, output_path: str):

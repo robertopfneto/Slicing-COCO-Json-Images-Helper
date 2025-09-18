@@ -9,16 +9,21 @@
 
 # Generated dataset outputs
 output/
+output_resized/
+output_crossval/
 tiled_output/
 comparison_visualizations/
 high_res_comparisons/
 visualizations/
 
 # Python cache files
+**/__pycache__/
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*__pycache__
+*__init__.cpython-*
 
 # Distribution / packaging
 .Python
@@ -99,3 +104,4 @@ Thumbs.db
 # Conda environment exports
 environment_backup.yml
 ./eng_claude.
+src/config/__pycache__/__init__.cpython-39.pyc

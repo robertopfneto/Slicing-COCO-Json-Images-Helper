@@ -72,18 +72,26 @@ class TilingEngine:
         for ann in annotations:
             bbox = ann.bbox  # [x, y, width, height]
             x, y, width, height = bbox
-            
+
+            tile_x1 = tile_x
+            tile_y1 = tile_y
+            tile_x2 = tile_x + tile_width
+            tile_y2 = tile_y + tile_height
+
             # Check if annotation intersects with tile
-            if (x + width < tile_x or x > tile_x + tile_width or
-                y + height < tile_y or y > tile_y + tile_height):
+            if (x + width <= tile_x1 or x >= tile_x2 or
+                y + height <= tile_y1 or y >= tile_y2):
                 continue
             
             # Calculate intersection area for coverage check
-            inter_x1 = max(x, tile_x)
-            inter_y1 = max(y, tile_y)
-            inter_x2 = min(x + width, tile_x + tile_width)
-            inter_y2 = min(y + height, tile_y + tile_height)
-            
+            inter_x1 = max(x, tile_x1)
+            inter_y1 = max(y, tile_y1)
+            inter_x2 = min(x + width, tile_x2)
+            inter_y2 = min(y + height, tile_y2)
+
+            if inter_x2 <= inter_x1 or inter_y2 <= inter_y1:
+                continue
+
             inter_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
             original_area = width * height
             
@@ -91,11 +99,19 @@ class TilingEngine:
             if inter_area / original_area < self.config.min_object_coverage:
                 continue
             
-            # Transform coordinates to tile space and apply scaling if needed
-            new_x = (x - tile_x) * scale_factor
-            new_y = (y - tile_y) * scale_factor
-            new_width = width * scale_factor
-            new_height = height * scale_factor
+            # Clip bbox to tile bounds and transform to tile space
+            clipped_x1 = inter_x1
+            clipped_y1 = inter_y1
+            clipped_x2 = inter_x2
+            clipped_y2 = inter_y2
+
+            new_x = (clipped_x1 - tile_x1) * scale_factor
+            new_y = (clipped_y1 - tile_y1) * scale_factor
+            new_width = (clipped_x2 - clipped_x1) * scale_factor
+            new_height = (clipped_y2 - clipped_y1) * scale_factor
+
+            if new_width <= 0 or new_height <= 0:
+                continue
             
             # Create new annotation with original dimensions preserved
             new_annotation = CocoAnnotation(
@@ -103,12 +119,21 @@ class TilingEngine:
                 image_id=ann.image_id,  # Will be reassigned later
                 category_id=ann.category_id,
                 segmentation=self._transform_segmentation(ann.segmentation, tile_offset, scale_factor),
-                area=original_area * (scale_factor ** 2),  # Scale area by square of scale factor
+                area=(new_width * new_height),
                 bbox=[new_x, new_y, new_width, new_height],
-                iscrowd=ann.iscrowd
+                iscrowd=ann.iscrowd,
+                extra={
+                    "source_annotation_id": ann.id,
+                    "intersection_over_area": inter_area / original_area,
+                    "original_bbox": bbox,
+                    "tile_offset": {
+                        "x": tile_x,
+                        "y": tile_y
+                    }
+                }
             )
             transformed_annotations.append(new_annotation)
-        
+
         return transformed_annotations
     
     def _transform_segmentation(self, segmentation: List[List[float]], 
