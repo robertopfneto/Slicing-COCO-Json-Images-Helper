@@ -21,7 +21,7 @@ def create_tiling_analysis(dataset_path: str, output_dir: str, target_image: str
     print("=" * 50)
     
     # Load dataset
-    annotations_path = os.path.join(dataset_path, "train", "_annotations.coco.json")
+    annotations_path = os.path.join(dataset_path, "_annotations.coco.json")
     if not os.path.exists(annotations_path):
         print(f"Error: Annotations file not found: {annotations_path}")
         return
@@ -62,7 +62,7 @@ def create_tiling_analysis(dataset_path: str, output_dir: str, target_image: str
         print(f"\nProcessing {i+1}/{len(images_to_analyze)}: {image_info.file_name}")
         
         # Load image
-        image_path = os.path.join(dataset_path, "train", image_info.file_name)
+        image_path = os.path.join(dataset_path, image_info.file_name)
         if not os.path.exists(image_path):
             print(f"  Warning: Image file not found: {image_path}")
             continue
@@ -116,10 +116,10 @@ def create_tiling_analysis(dataset_path: str, output_dir: str, target_image: str
 
 if __name__ == "__main__":
     # Test with the problematic image
-    target_image = "112_jpg.rf.7ad9edc92c4e2368a5710d1e7c8a6ab9.jpg"
+    target_image = "112.jpg"
     
     create_tiling_analysis(
-        dataset_path="./dataset",
+        dataset_path="./dataset/all/train",
         output_dir="./tiling_analysis",
         target_image=target_image
     )

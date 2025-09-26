@@ -30,7 +30,7 @@ class DatasetProcessor:
         print("🔄 Loading dataset...")
         
         # Load original COCO dataset
-        annotations_path = os.path.join(self.config.dataset.input_path, "train", "_annotations.coco.json")
+        annotations_path = os.path.join(self.config.dataset.input_path, "_annotations.coco.json")
         if not os.path.exists(annotations_path):
             raise FileNotFoundError(f"Annotations file not found: {annotations_path}")
         
@@ -69,7 +69,7 @@ class DatasetProcessor:
             progress_pct = (i / total_images) * 100
             print(f"📸 [{i:4d}/{total_images}] ({progress_pct:5.1f}%) Processing: {original_image.file_name}")
             
-            image_path = os.path.join(self.config.dataset.input_path, "train", original_image.file_name)
+            image_path = os.path.join(self.config.dataset.input_path, original_image.file_name)
             
             if not os.path.exists(image_path):
                 print(f"   ⚠️  Warning: Image file not found: {image_path}")

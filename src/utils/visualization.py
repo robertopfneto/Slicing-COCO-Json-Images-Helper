@@ -280,7 +280,7 @@ class BoundingBoxVisualizer:
         """Visualize a dataset with bounding boxes."""
         
         # Load dataset
-        annotations_path = os.path.join(dataset_path, "train", "_annotations.coco.json")
+        annotations_path = os.path.join(dataset_path, "_annotations.coco.json")
         if not os.path.exists(annotations_path):
             raise FileNotFoundError(f"Annotations file not found: {annotations_path}")
         
@@ -305,7 +305,7 @@ class BoundingBoxVisualizer:
             print(f"Processing image {i+1}/{len(sample_images)}: {image_info.file_name}")
             
             # Load image
-            image_path = os.path.join(dataset_path, "train", image_info.file_name)
+            image_path = os.path.join(dataset_path, image_info.file_name)
             if not os.path.exists(image_path):
                 print(f"  Warning: Image file not found: {image_path}")
                 continue
@@ -337,7 +337,7 @@ class BoundingBoxVisualizer:
     def create_summary_report(self, dataset_path: str, output_dir: str) -> None:
         """Create a summary report of the dataset."""
         
-        annotations_path = os.path.join(dataset_path, "train", "_annotations.coco.json")
+        annotations_path = os.path.join(dataset_path, "_annotations.coco.json")
         dataset = CocoDataset.from_json(annotations_path)
         
         # Calculate statistics

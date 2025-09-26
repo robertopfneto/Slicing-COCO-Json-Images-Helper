@@ -21,7 +21,7 @@ from src.services.dataset.processor import DatasetProcessor
 def main():
     parser = argparse.ArgumentParser(description="Tile dataset images with annotation preservation")
     parser.add_argument("--config", type=str, help="Path to configuration file")
-    parser.add_argument("--input", type=str, default="./dataset", help="Input dataset path")
+    parser.add_argument("--input", type=str, default="./dataset/all/train", help="Input dataset path")
     parser.add_argument("--output", type=str, default="./output", help="Output dataset path")
     parser.add_argument("--tile-size", type=int, nargs=2, default=[512, 512], 
                        help="Tile size (width height)")
@@ -68,7 +68,7 @@ def main():
         print(f"Error: Input path does not exist: {config.dataset.input_path}")
         sys.exit(1)
     
-    annotations_path = os.path.join(config.dataset.input_path, "train", "_annotations.coco.json")
+    annotations_path = os.path.join(config.dataset.input_path, "_annotations.coco.json")
     if not os.path.exists(annotations_path):
         print(f"Error: Annotations file not found: {annotations_path}")
         sys.exit(1)

@@ -14,7 +14,7 @@ class TilingConfig:
 
 @dataclass
 class DatasetConfig:
-    input_path: str = "./dataset"
+    input_path: str = "./dataset/all/train"
     output_path: str = "./output"
     train_split: float = 0.8
     val_split: float = 0.1
@@ -53,7 +53,7 @@ class AppConfig:
                 )
             ),
             dataset=DatasetConfig(
-                input_path=os.getenv("INPUT_PATH", "./dataset"),
+                input_path=os.getenv("INPUT_PATH", "./dataset/all/train"),
                 output_path=os.getenv("OUTPUT_PATH", "./output"),
                 train_split=float(os.getenv("TRAIN_SPLIT", 0.8)),
                 val_split=float(os.getenv("VAL_SPLIT", 0.1)),
