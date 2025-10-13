@@ -95,6 +95,7 @@ Thumbs.db
 
 # Large datasets (comment out if you want to track the original dataset)
 # dataset/
+*/train
 
 # Conda environment exports
 environment_backup.yml
