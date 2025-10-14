@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import sqrt
+from math import ceil, sqrt
 from statistics import median
 from typing import Iterable, List, Optional, Sequence, Tuple
 
@@ -86,25 +86,38 @@ def compute_sage_grid(
     height, width = image_shape
     tile_w, tile_h = tile_size
 
-    stride_x = tile_w * (1.0 - overlap)
-    stride_y = tile_h * (1.0 - overlap)
+    base_stride_x = tile_w * (1.0 - overlap)
+    base_stride_y = tile_h * (1.0 - overlap)
 
-    nx = int(round((width - tile_w) / stride_x)) + 1 if stride_x > 0 else 1
-    ny = int(round((height - tile_h) / stride_y)) + 1 if stride_y > 0 else 1
+    if width <= tile_w or base_stride_x <= 0.0:
+        nx = 1
+        stride_x = float(tile_w)
+    else:
+        approx_steps_x = (width - tile_w) / base_stride_x
+        steps_x = max(1, ceil(approx_steps_x))
+        nx = steps_x + 1
+        stride_x = (width - tile_w) / steps_x
 
-    nx = max(nx, 1)
-    ny = max(ny, 1)
-
-    if nx > 1:
-        stride_x = (width - tile_w) / (nx - 1)
-    if ny > 1:
-        stride_y = (height - tile_h) / (ny - 1)
+    if height <= tile_h or base_stride_y <= 0.0:
+        ny = 1
+        stride_y = float(tile_h)
+    else:
+        approx_steps_y = (height - tile_h) / base_stride_y
+        steps_y = max(1, ceil(approx_steps_y))
+        ny = steps_y + 1
+        stride_y = (height - tile_h) / steps_y
 
     boxes: List[Tuple[int, int, int, int]] = []
     for j in range(ny):
         for i in range(nx):
             x1 = int(round(i * stride_x))
             y1 = int(round(j * stride_y))
+
+            if i == nx - 1:
+                x1 = width - tile_w
+            if j == ny - 1:
+                y1 = height - tile_h
+
             x2 = min(x1 + tile_w, width)
             y2 = min(y1 + tile_h, height)
             x1 = max(0, x2 - tile_w)

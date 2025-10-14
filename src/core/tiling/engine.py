@@ -157,19 +157,30 @@ class TilingEngine:
             if inter_area / original_area < self.config.min_object_coverage:
                 continue
             
-            # Transform coordinates to tile space and apply scaling if needed
-            new_x = (x - tile_x) * scale_factor
-            new_y = (y - tile_y) * scale_factor
-            new_width = width * scale_factor
-            new_height = height * scale_factor
+            # Transform coordinates to tile space and apply scaling if needed.
+            local_x1 = max(0.0, inter_x1 - tile_x)
+            local_y1 = max(0.0, inter_y1 - tile_y)
+            local_x2 = min(float(tile_width), inter_x2 - tile_x)
+            local_y2 = min(float(tile_height), inter_y2 - tile_y)
+
+            clipped_width = max(0.0, local_x2 - local_x1)
+            clipped_height = max(0.0, local_y2 - local_y1)
+            if clipped_width <= 0.0 or clipped_height <= 0.0:
+                continue
+
+            new_x = local_x1 * scale_factor
+            new_y = local_y1 * scale_factor
+            new_width = clipped_width * scale_factor
+            new_height = clipped_height * scale_factor
+            new_area = new_width * new_height
             
-            # Create new annotation with original dimensions preserved
+            # Create new annotation with bbox clipped to the tile bounds.
             new_annotation = CocoAnnotation(
                 id=ann.id,  # Will be reassigned later
                 image_id=ann.image_id,  # Will be reassigned later
                 category_id=ann.category_id,
                 segmentation=self._transform_segmentation(ann.segmentation, tile_offset, scale_factor),
-                area=original_area * (scale_factor ** 2),  # Scale area by square of scale factor
+                area=new_area,
                 bbox=[new_x, new_y, new_width, new_height],
                 iscrowd=ann.iscrowd
             )

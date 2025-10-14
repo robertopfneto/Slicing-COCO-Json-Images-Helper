@@ -145,7 +145,7 @@ class DatasetComparator:
         """Create a single side-by-side comparison image."""
         
         # Draw tile boundaries on original image first, then bounding boxes
-        orig_with_tiles = self.visualizer.draw_tile_boundaries(original_img, (512, 512), 0, tile_offset)
+        orig_with_tiles = self.visualizer.draw_tile_boundaries(original_img, tile_img.size, 0, tile_offset)
         orig_with_boxes = self.visualizer.draw_bounding_boxes(orig_with_tiles, original_anns, categories)
         
         # Draw only bounding boxes on tile image

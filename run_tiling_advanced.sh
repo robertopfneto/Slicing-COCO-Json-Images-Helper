@@ -12,7 +12,7 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 INPUT_DIR="${SCRIPT_DIR}/dataset"
 OUTPUT_DIR="${SCRIPT_DIR}/output"
-TILE_SIZE=512
+TILE_SIZE=640
 OVERLAP=0
 MIN_COVERAGE=0.3
 VALIDATE=true
@@ -24,7 +24,7 @@ show_usage() {
     echo "Options:"
     echo "  -i, --input DIR        Input dataset directory (default: ./dataset)"
     echo "  -o, --output DIR       Output directory (default: ./output)"
-    echo "  -s, --size SIZE        Tile size in pixels (default: 512)"
+    echo "  -s, --size SIZE        Tile size in pixels (default: 640)"
     echo "  -v, --overlap PIXELS   Overlap between tiles (default: 0)"
     echo "  -c, --coverage RATIO   Minimum object coverage ratio (default: 0.3)"
     echo "  --no-validate          Skip output validation"

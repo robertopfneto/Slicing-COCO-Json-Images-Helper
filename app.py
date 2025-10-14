@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--config", type=str, help="Path to configuration file")
     parser.add_argument("--input", type=str, default="./dataset", help="Input dataset path")
     parser.add_argument("--output", type=str, default="./output", help="Output dataset path")
-    parser.add_argument("--tile-size", type=int, nargs=2, default=[512, 512], 
+    parser.add_argument("--tile-size", type=int, nargs=2, default=[640, 640], 
                        help="Tile size (width height)")
     parser.add_argument("--overlap", type=int, default=0, help="Tile overlap in pixels")
     parser.add_argument("--min-coverage", type=float, default=0.3, 

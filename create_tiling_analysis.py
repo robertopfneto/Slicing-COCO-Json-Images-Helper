@@ -79,7 +79,7 @@ def create_tiling_analysis(dataset_path: str, output_dir: str, target_image: str
             # Create tiling overview
             overview = visualizer.create_tiling_overview(
                 image, image_annotations, categories, 
-                tile_size=(512, 512), overlap=0, max_width=1600
+                tile_size=(640, 640), overlap=0, max_width=1600
             )
             
             # Save overview
@@ -92,7 +92,7 @@ def create_tiling_analysis(dataset_path: str, output_dir: str, target_image: str
             if image.width <= 2000:  # Only for reasonably sized images
                 full_res_overview = visualizer.create_tiling_overview(
                     image, image_annotations, categories, 
-                    tile_size=(512, 512), overlap=0, max_width=image.width
+                    tile_size=(640, 640), overlap=0, max_width=image.width
                 )
                 
                 full_res_path = os.path.join(output_dir, f"full_res_analysis_{base_name}.jpg")

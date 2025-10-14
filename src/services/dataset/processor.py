@@ -8,7 +8,7 @@ from PIL import Image
 
 from src.config.settings import AppConfig
 from src.core.tiling.engine import GeneratedTile, TilingEngine
-from src.core.tiling.sage import compute_adaptive_overlap
+from src.core.tiling.sage import compute_adaptive_overlap, compute_sage_grid
 from src.models.coco import CocoAnnotation, CocoDataset, CocoImage
 from src.services.annotation.manager import AnnotationManager
 from src.services.image.handler import ImageHandler
@@ -160,6 +160,7 @@ class DatasetProcessor:
         new_image_id = 1
         new_annotation_id = 1
         saved_tiles = 0
+        sage_info_printed = False
 
         for index, original_image in enumerate(images, start=1):
             image_path = os.path.join(images_dir, original_image.file_name)
@@ -168,6 +169,33 @@ class DatasetProcessor:
                 continue
 
             with Image.open(image_path) as img:
+                if self.config.tiling.mode == "sage" and not sage_info_printed:
+                    grid_preview = compute_sage_grid(
+                        image_shape=(img.height, img.width),
+                        tile_size=tile_size,
+                        overlap=self.config.tiling.overlap_ratio,
+                    )
+                    overlap_px_x = max(0.0, tile_size[0] - grid_preview.stride[0])
+                    overlap_px_y = max(0.0, tile_size[1] - grid_preview.stride[1])
+                    layout_x, layout_y = grid_preview.layout
+                    stride_x, stride_y = grid_preview.stride
+                    closed = grid_preview.boxes and grid_preview.boxes[-1][2] == img.width and grid_preview.boxes[-1][3] == img.height
+                    print(f"[{split_name}] SAGE adaptive mode")
+                    print(
+                        f"[{split_name}] Tile size: {tile_size} | overlap: "
+                        f"{overlap_px_x:.1f}px x {overlap_px_y:.1f}px "
+                        f"({self.config.tiling.overlap_ratio * 100:.2f}%)"
+                    )
+                    print(
+                        f"[{split_name}] Grid: {layout_x} x {layout_y} tiles | "
+                        f"stride ~= ({stride_x:.2f}, {stride_y:.2f}) to close at ({img.width}x{img.height})"
+                    )
+                    print(
+                        f"[{split_name}] Corner alignment: "
+                        f"{'yes' if closed else 'no'} bottom-right edge closed"
+                    )
+                    sage_info_printed = True
+
                 image_annotations = annotations_by_image.get(original_image.id, [])
                 tile_counter = 0
 

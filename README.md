@@ -48,7 +48,7 @@ python app.py --input ./dataset --output ./output
 python app.py \
   --input ./dataset \
   --output ./tiled_dataset \
-  --tile-size 512 512 \
+  --tile-size 640 640 \
   --overlap 50 \
   --min-coverage 0.3 \
   --validate
@@ -57,8 +57,8 @@ python app.py \
 ### Configuration via Environment Variables
 
 ```bash
-export TILE_WIDTH=512
-export TILE_HEIGHT=512
+export TILE_WIDTH=640
+export TILE_HEIGHT=640
 export TILE_OVERLAP=50
 export MIN_OBJECT_COVERAGE=0.3
 export INPUT_PATH=./dataset
@@ -69,7 +69,7 @@ python app.py
 
 ## Configuration Options
 
-- `TILE_WIDTH`, `TILE_HEIGHT`: Tile dimensions (default: 512x512)
+- `TILE_WIDTH`, `TILE_HEIGHT`: Tile dimensions (default: 640x640)
 - `TILE_OVERLAP`: Overlap between tiles in pixels (default: 0)
 - `MIN_OBJECT_COVERAGE`: Minimum fraction of object that must be visible (default: 0.3)
 - `INPUT_PATH`: Input dataset directory (default: ./dataset)
@@ -96,7 +96,7 @@ The application generates a tiled dataset with the same structure:
 output/
 └── train/
     ├── image1_tile_0_0.jpg
-    ├── image1_tile_512_0.jpg
+    ├── image1_tile_640_0.jpg
     ├── image2_tile_0_0.jpg
     └── _annotations.coco.json
 ```

@@ -152,7 +152,7 @@ class BoundingBoxVisualizer:
         
         # Draw bounding boxes and tile boundaries on original image
         # First draw tile boundaries, then bounding boxes on top
-        orig_with_tiles = self.draw_tile_boundaries(original_img, (512, 512), 0, tile_offset)
+        orig_with_tiles = self.draw_tile_boundaries(original_img, tiled_img.size, 0, tile_offset)
         orig_with_boxes = self.draw_bounding_boxes(orig_with_tiles, original_annotations, categories)
         
         # Draw only bounding boxes on tiled image
@@ -192,7 +192,7 @@ class BoundingBoxVisualizer:
         return comparison
     
     def create_tiling_overview(self, image: Image.Image, annotations: List[CocoAnnotation], 
-                              categories: dict, tile_size: Tuple[int, int] = (512, 512), 
+                              categories: dict, tile_size: Tuple[int, int] = (640, 640), 
                               overlap: int = 0, max_width: int = 1600) -> Image.Image:
         """Create an overview showing the complete tiling grid with annotations."""
         

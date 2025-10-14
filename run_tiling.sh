@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Dataset Tiling Script
-# Tiles images to 512x512 while preserving COCO bounding box annotations
+# Tiles images to 640x640 while preserving COCO bounding box annotations
 
 echo "=========================================="
 echo "     Dataset Tiling Application"
@@ -12,7 +12,7 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 INPUT_DIR="${SCRIPT_DIR}/dataset"
 OUTPUT_DIR="${SCRIPT_DIR}/output"
-TILE_SIZE=512
+TILE_SIZE=640
 OVERLAP=0
 MIN_COVERAGE=0.3
 
