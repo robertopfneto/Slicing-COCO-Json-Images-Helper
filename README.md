@@ -8,6 +8,7 @@ A Configuration-Driven Architecture application for tiling images in Roboflow CO
 - Preserves and transforms COCO JSON annotations
 - Configurable tile size and overlap
 - Minimum object coverage filtering
+- SAGE-based k-fold tiling pipeline that keeps tiles from the same image inside the same fold
 - Configuration-driven design for easy customization
 
 ## Architecture
@@ -66,6 +67,16 @@ export OUTPUT_PATH=./output
 
 python app.py
 ```
+
+### K-Fold SAGE Tiling
+
+Use `generate_kfold_tiles.py` to produce SAGE-tilled cross-validation splits where every tile created from an original image remains in the same fold:
+
+```bash
+python generate_kfold_tiles.py
+```
+
+The script loops through all folds and splits (`train`, `val`, `test`) and invokes the adaptive SAGE tiler under the hood. It first looks for fold definition JSON files (e.g. `dataset/all/filesJSON/fold_1_train.json`) and, if they are absent, builds deterministic fallback splits directly from `dataset/train/_annotations.coco.json`. The tiled datasets are written to `dataset/tiles/sage/fold_<k>/<split>/` with COCO annotations, summaries, and metadata describing the exact tiling parameters that were used.
 
 ## Configuration Options
 
