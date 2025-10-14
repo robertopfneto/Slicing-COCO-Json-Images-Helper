@@ -1,81 +1,46 @@
 #!/usr/bin/env python3
 """
-SAGE Visualization Tool (Adaptive Overlap)
+SAGE Visualization Tool (Adaptive Overlap + Context Padding)
 
-Visualizes how the SAGE (Stride-Aligned Grid Extraction) would divide
-a high-resolution image into stride-aligned tiles. Calculates the
-ideal overlap automatically based on bounding box statistics
-(median width and height) from a COCO dataset.
+Produces a complete preview of the SAGE pipeline:
+  * Computes adaptive overlap (O*)
+  * Draws the stride-aligned grid with context padding
+  * Extracts tiles using the same engine logic (including padding)
+  * Saves a sample tile and a contact sheet for quick inspection
 """
 
+from __future__ import annotations
+
 import json
-import cv2
-import numpy as np
 import os
 from pathlib import Path
+from typing import Iterable, List, Tuple
+
+import cv2
 import matplotlib
-matplotlib.use('Agg')  # evita erro Qt headless
 import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
+
+matplotlib.use("Agg")  # keep headless environments happy
+
+# Make sure we can import the project modules
+CURRENT_DIR = Path(__file__).resolve().parent
+SRC_DIR = CURRENT_DIR / "src"
+if str(SRC_DIR) not in os.sys.path:
+    os.sys.path.insert(0, str(SRC_DIR))
+
+from src.config.settings import TilingConfig
+from src.core.tiling.engine import GeneratedTile, TilingEngine
+from src.core.tiling.sage import compute_sage_grid
 
 
-# ===================== SAGE CORE ===================== #
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
 
-def compute_sage_stride(image_shape, block_size=(640, 640), overlap=0.03, mode="align"):
-    """Compute stride-aligned coordinates for SAGE tiling."""
-    H, W = image_shape[:2]
-    Bw, Bh = block_size
-
-    # Initial stride
-    Sx = Bw * (1 - overlap)
-    Sy = Bh * (1 - overlap)
-
-    # Number of tiles
-    nx = int(np.ceil((W - Bw) / Sx)) + 1
-    ny = int(np.ceil((H - Bh) / Sy)) + 1
-
-    # Adjust stride to close exactly on borders
-    if mode == "align" and nx > 1 and ny > 1:
-        Sx = (W - Bw) / (nx - 1)
-        Sy = (H - Bh) / (ny - 1)
-
-    grid = []
-    for j in range(ny):
-        for i in range(nx):
-            x1 = int(round(i * Sx))
-            y1 = int(round(j * Sy))
-            x2 = min(x1 + Bw, W)
-            y2 = min(y1 + Bh, H)
-            grid.append((x1, y1, x2, y2))
-
-    return grid, (Sx, Sy), (nx, ny)
-
-
-def draw_sage_grid(image, grid, colors=None, thickness=2):
-    """Draw stride-aligned grid over the image with alternating colors."""
-    if colors is None:
-        colors = [
-            (0, 255, 0),
-            (0, 165, 255),
-            (255, 0, 0),
-            (255, 0, 255),
-            (255, 255, 0),
-            (0, 255, 255),
-        ]
-    img_copy = image.copy()
-    palette_size = len(colors)
-    for idx, (x1, y1, x2, y2) in enumerate(grid):
-        color = colors[idx % palette_size]
-        cv2.rectangle(img_copy, (x1, y1), (x2, y2), color, thickness)
-    return img_copy
-
-
-# ===================== COCO UTILITIES ===================== #
-
-def _roboflow_aliases(filename):
-    """
-    Generate possible original filenames for Roboflow-hashed assets like
-    22_jpg.rf.<hash>.jpg → {22.jpg}. Returns aliases (may be empty).
-    """
+def _roboflow_aliases(filename: str) -> set[str]:
+    """Return possible original filenames for Roboflow-hashed assets."""
     name = os.path.basename(filename)
     if ".rf." not in name:
         return set()
@@ -97,11 +62,8 @@ def _roboflow_aliases(filename):
     return {candidate for candidate in candidates if candidate != name}
 
 
-def _find_coco_image_entry(data, image_filename):
-    """
-    Locate the COCO image entry corresponding to image_filename, supporting
-    Roboflow hashed names and the optional extra.name metadata.
-    """
+def _find_coco_image_entry(data: dict, image_filename: str) -> dict | None:
+    """Locate the COCO image entry corresponding to image_filename."""
     basename = os.path.basename(image_filename)
     candidates = {basename} | _roboflow_aliases(basename)
 
@@ -118,33 +80,66 @@ def _find_coco_image_entry(data, image_filename):
     return None
 
 
-def get_box_medians(coco_json):
+def get_box_medians(coco_json: str) -> Tuple[float, float]:
     """Compute median width and height of bounding boxes from COCO annotations."""
-    with open(coco_json, 'r') as f:
+    with open(coco_json, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    widths, heights = [], []
+    widths: List[float] = []
+    heights: List[float] = []
     for ann in data["annotations"]:
         _, _, w, h = ann["bbox"]
         widths.append(w)
         heights.append(h)
 
     if not widths or not heights:
-        raise ValueError("No bounding boxes found in COCO JSON!")
+        raise ValueError("No bounding boxes found in COCO JSON.")
 
     w_med = float(np.median(widths))
     h_med = float(np.median(heights))
     return w_med, h_med
 
 
-def draw_bounding_boxes(image, coco_json, image_filename, color=(255, 0, 0)):
+def draw_sage_grid(
+    image: np.ndarray,
+    grid: Iterable[Tuple[int, int, int, int]],
+    context_pad: int = 0,
+) -> np.ndarray:
+    """Draw SAGE tiles and optional context padding over the image."""
+    colors = [
+        (0, 255, 0),
+        (0, 165, 255),
+        (255, 0, 0),
+        (255, 0, 255),
+        (255, 255, 0),
+        (0, 255, 255),
+    ]
+    img_copy = image.copy()
+    height, width = image.shape[:2]
+
+    for idx, (x1, y1, x2, y2) in enumerate(grid):
+        color = colors[idx % len(colors)]
+        cv2.rectangle(img_copy, (x1, y1), (x2, y2), color, 2)
+
+        if context_pad > 0:
+            pad_x1 = max(0, x1 - context_pad)
+            pad_y1 = max(0, y1 - context_pad)
+            pad_x2 = min(width, x2 + context_pad)
+            pad_y2 = min(height, y2 + context_pad)
+            pad_color = tuple(int(c * 0.55) for c in color)
+            cv2.rectangle(img_copy, (pad_x1, pad_y1), (pad_x2, pad_y2), pad_color, 1)
+
+    return img_copy
+
+
+def draw_bounding_boxes(image: np.ndarray, coco_json: str, image_filename: str, color=(255, 0, 0)) -> np.ndarray:
     """Draw all bounding boxes for one image."""
-    with open(coco_json, 'r') as f:
+    with open(coco_json, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     img_entry = _find_coco_image_entry(data, image_filename)
     if img_entry is None:
-        print(f"⚠️ {os.path.basename(image_filename)} não encontrada nas anotações.")
+        print(f"Warning: {os.path.basename(image_filename)} not found in annotations.")
         return image
 
     anns = [a for a in data["annotations"] if a["image_id"] == img_entry["id"]]
@@ -153,69 +148,148 @@ def draw_bounding_boxes(image, coco_json, image_filename, color=(255, 0, 0)):
         x, y, w, h = ann["bbox"]
         cv2.rectangle(img_copy, (int(x), int(y)), (int(x + w), int(y + h)), color, 2)
 
-    print(f"✅ {len(anns)} boxes desenhadas para {os.path.basename(image_filename)}")
+    print(f"Info: drew {len(anns)} boxes for {os.path.basename(image_filename)}.")
     return img_copy
 
 
-# ===================== MAIN SCRIPT ===================== #
+def extract_tiles_for_preview(
+    image: np.ndarray,
+    overlap_ratio: float,
+    tile_size: Tuple[int, int],
+    context_pad: int,
+) -> List[GeneratedTile]:
+    """Use the same engine logic to extract tiles with context padding."""
+    tiling_config = TilingConfig(
+        tile_size=tile_size,
+        overlap=0,
+        overlap_ratio=overlap_ratio,
+        context_pad=context_pad,
+        min_object_coverage=0.0,
+        resize_output=None,
+        mode="sage",
+        keep_empty_tiles=True,
+    )
+    engine = TilingEngine(tiling_config)
 
-def main():
-    image_path = "dataset/train/9.jpg"
-    coco_json = "dataset/train/_annotations.coco.json"
-    output_dir = "sage_vis"
-    os.makedirs(output_dir, exist_ok=True)
+    rgb_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    tiles = list(engine.generate_tiles(rgb_image))
+    print(f"Info: generated {len(tiles)} tiles for preview.")
+    return tiles
 
-    print("\n📸 SAGE Visualization (Adaptive Overlap)")
-    print("=" * 60)
-    print(f"Image: {image_path}")
-    print(f"Annotations: {coco_json}")
 
-    image = cv2.imread(image_path)
-    if image is None:
-        print(f"❌ Could not load image {image_path}")
+def save_contact_sheet(tiles: List[GeneratedTile], output_path: Path, max_tiles: int = 9) -> None:
+    """Create a contact sheet with the first N tiles."""
+    if not tiles:
         return
-    H, W = image.shape[:2]
-    B = 640  # tile size (assuming square)
-    print(f"\nImage size: {W} × {H}")
-    print(f"Tile size: {B} × {B}")
 
-    # === 1️⃣ Compute median box dimensions ===
-    w_med, h_med = get_box_medians(coco_json)
+    num_tiles = min(max_tiles, len(tiles))
+    cols = 3
+    rows = int(np.ceil(num_tiles / cols))
+
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 3.4, rows * 3.4))
+    axes = np.array(axes).reshape(rows, cols)
+
+    for idx in range(rows * cols):
+        ax = axes.flat[idx]
+        if idx < num_tiles:
+            tile = tiles[idx]
+            ax.imshow(tile.image)
+            origin = tile.grid_origin or tile.origin
+            ax.set_title(f"Tile {idx}\norig={origin}", fontsize=8)
+        ax.axis("off")
+
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=180)
+    plt.close(fig)
+    print(f"Info: contact sheet saved to {output_path}")
+
+
+# ---------------------------------------------------------------------------
+# Main script
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    image_path = Path("dataset/train/9.jpg")
+    coco_json = Path("dataset/train/_annotations.coco.json")
+    output_dir = Path("sage_vis")
+    tile_size = (640, 640)
+    context_pad = 64
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print("\nSAGE Visualization (Adaptive Overlap + Context Pad)")
+    print("=" * 70)
+    print(f"Image path: {image_path}")
+    print(f"Annotations: {coco_json}")
+    print(f"Tile size: {tile_size}")
+    print(f"Context padding: {context_pad}px")
+
+    image = cv2.imread(str(image_path))
+    if image is None:
+        print(f"Error: could not load image {image_path}")
+        return
+    height, width = image.shape[:2]
+    print(f"Image size: {width} x {height}")
+
+    # Step 1: bounding box statistics
+    w_med, h_med = get_box_medians(str(coco_json))
     A_med = w_med * h_med
     d = np.sqrt(A_med)
-    print(f"\nMedian box width = {w_med:.2f}, height = {h_med:.2f}")
-    print(f"Equivalent side d = √(w×h) = {d:.2f}px")
+    print(f"\nBounding box median width={w_med:.2f}, height={h_med:.2f}")
+    print(f"Equivalent side (sqrt(w*h)) = {d:.2f}px")
 
-    # === 2️⃣ Compute adaptive overlap ===
-    r = d / B
-    O_star = 0.5 * r
-    print(f"Proportion r = d/B = {r:.4f}")
-    print(f"Adaptive overlap O* = 0.5 × r = {O_star:.4f} ({O_star*100:.2f}%)")
+    # Step 2: adaptive overlap
+    r = d / tile_size[0]
+    overlap_ratio = 0.5 * r
+    print(f"Ratio r = d/B = {r:.4f}")
+    print(f"Adaptive overlap O* = {overlap_ratio:.4f} ({overlap_ratio*100:.2f}%)")
 
-    # === 3️⃣ Compute SAGE grid using adaptive overlap ===
-    grid, stride, (nx, ny) = compute_sage_stride(image.shape, (B, B), O_star, "align")
-    print(f"\nGrid: {nx} × {ny} tiles (stride={stride})")
+    # Step 3: compute SAGE grid
+    grid_data = compute_sage_grid((height, width), tile_size, overlap_ratio)
+    grid = grid_data.boxes
+    stride = grid_data.stride
+    nx, ny = grid_data.layout
+    print(f"\nGrid layout: {nx} x {ny} tiles  |  stride = ({stride[0]:.2f}, {stride[1]:.2f})")
 
-    # === 4️⃣ Draw results ===
-    image_boxes = draw_bounding_boxes(image, coco_json, image_path, color=(255, 0, 0))
-    image_grid = draw_sage_grid(image_boxes, grid, thickness=2)
+    # Step 4: draw grid with context padding
+    image_with_boxes = draw_bounding_boxes(image, str(coco_json), str(image_path))
+    image_grid = draw_sage_grid(image_with_boxes, grid, context_pad=context_pad)
 
-    out_path = os.path.join(output_dir, "sage_adaptive_grid.jpg")
-    cv2.imwrite(out_path, image_grid)
+    grid_path = output_dir / "sage_adaptive_grid.jpg"
+    cv2.imwrite(str(grid_path), image_grid)
+    print(f"Info: grid visualization saved to {grid_path}")
 
-    print(f"\n✅ Visualization saved at: {out_path}")
-    print("\nLegend:")
-    print("🟥 = bounding boxes (objects)")
-    print("🟩 = stride-aligned SAGE tiles\n")
-
-    # Optional save preview
+    preview_path = output_dir / "sage_adaptive_grid_preview.png"
     plt.figure(figsize=(12, 8))
     plt.imshow(cv2.cvtColor(image_grid, cv2.COLOR_BGR2RGB))
     plt.title(
-        f"SAGE Adaptive Grid (O*={O_star*100:.2f}%) - {nx}x{ny} tiles - tile={B}x{B}px"
+        f"SAGE Adaptive Grid (O*={overlap_ratio*100:.2f}%)\n"
+        f"Tiles: {nx}x{ny}  Tile={tile_size[0]}x{tile_size[1]}  Pad={context_pad}px"
     )
     plt.axis("off")
-    plt.savefig(os.path.join(output_dir, "sage_adaptive_grid_preview.png"), dpi=200, bbox_inches="tight")
+    plt.savefig(preview_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    print(f"Info: preview figure saved to {preview_path}")
+
+    # Step 5: extract tiles using the real engine
+    tiles = extract_tiles_for_preview(image, overlap_ratio, tile_size, context_pad)
+
+    if tiles:
+        mid_tile = tiles[len(tiles) // 2]
+        sample_tile_path = output_dir / "sample_tile_with_context.jpg"
+        sample_bgr = cv2.cvtColor(np.array(mid_tile.image), cv2.COLOR_RGB2BGR)
+        cv2.imwrite(str(sample_tile_path), sample_bgr)
+        print(
+            f"Info: sample tile saved to {sample_tile_path} "
+            f"(origin={mid_tile.origin}, grid_origin={mid_tile.grid_origin})"
+        )
+
+        contact_path = output_dir / "sage_tile_contact_sheet.png"
+        save_contact_sheet(tiles, contact_path, max_tiles=9)
+    else:
+        print("Warning: no tiles were generated (check configuration).")
+
+    print("\nDone.")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Sequence
 from PIL import Image
 
 from src.config.settings import AppConfig
-from src.core.tiling.engine import TilingEngine
+from src.core.tiling.engine import GeneratedTile, TilingEngine
 from src.core.tiling.sage import compute_adaptive_overlap
 from src.models.coco import CocoAnnotation, CocoDataset, CocoImage
 from src.services.annotation.manager import AnnotationManager
@@ -35,22 +35,8 @@ class DatasetProcessor:
         overlap_ratio: Optional[float] = None,
         keep_empty_tiles: Optional[bool] = None,
         image_filter: Optional[Sequence[int]] = None,
-    ) -> Dict[str, int]:
-        """Tile a dataset split and rewrite annotations.
-
-        Args:
-            annotations_path: Path to the COCO annotations JSON.
-            images_dir: Directory containing original images.
-            split_name: Name of the split being processed.
-            output_dir: Directory where tiled images+JSON will be written.
-            mode: Optional tiling mode override. Defaults to current config.
-            overlap_ratio: Optional pre-computed overlap ratio (SAGE).
-            keep_empty_tiles: Whether to keep tiles without annotations.
-            image_filter: Optional list of image IDs to restrict processing.
-
-        Returns:
-            Basic counters with the number of tiles and annotations produced.
-        """
+    ) -> Dict[str, float]:
+        """Tile a dataset split and rewrite annotations."""
 
         annotations_path = annotations_path or os.path.join(
             self.config.dataset.input_path, split_name, "_annotations.coco.json"
@@ -81,15 +67,19 @@ class DatasetProcessor:
             annotations_by_image.setdefault(ann.image_id, []).append(ann)
 
         effective_mode = (mode or self.config.tiling.mode).lower()
-        requested_overlap = overlap_ratio if overlap_ratio is not None else self.config.tiling.overlap_ratio
+        requested_overlap = (
+            overlap_ratio if overlap_ratio is not None else self.config.tiling.overlap_ratio
+        )
         if keep_empty_tiles is None:
             keep_empty_tiles = self.config.tiling.keep_empty_tiles
 
         original_mode = self.config.tiling.mode
         original_overlap = self.config.tiling.overlap_ratio
         original_keep_empty = self.config.tiling.keep_empty_tiles
+        original_context_pad = self.config.tiling.context_pad
 
         effective_overlap_ratio = requested_overlap or 0.0
+
         try:
             self.config.tiling.mode = effective_mode
             self.config.tiling.keep_empty_tiles = keep_empty_tiles
@@ -97,15 +87,19 @@ class DatasetProcessor:
             if effective_mode == "sage":
                 if requested_overlap is None or requested_overlap <= 0.0:
                     requested_overlap = compute_adaptive_overlap(
-                        dataset.annotations, self.config.tiling.tile_size, annotation_filter=image_filter
+                        dataset.annotations,
+                        self.config.tiling.tile_size,
+                        annotation_filter=image_filter,
                     )
                 self.config.tiling.overlap_ratio = requested_overlap
+                effective_overlap_ratio = self.config.tiling.overlap_ratio
                 print(
                     f"[{split_name}] SAGE overlap ratio set to {self.config.tiling.overlap_ratio:.4f} "
                     f"({self.config.tiling.overlap_ratio * 100:.2f}%)"
                 )
             else:
                 self.config.tiling.overlap_ratio = requested_overlap or 0.0
+                effective_overlap_ratio = self.config.tiling.overlap_ratio
 
             summary = self._tile_split(
                 dataset=dataset,
@@ -116,11 +110,11 @@ class DatasetProcessor:
                 split_name=split_name,
                 keep_empty_tiles=keep_empty_tiles,
             )
-            effective_overlap_ratio = self.config.tiling.overlap_ratio
         finally:
             self.config.tiling.mode = original_mode
             self.config.tiling.overlap_ratio = original_overlap
             self.config.tiling.keep_empty_tiles = original_keep_empty
+            self.config.tiling.context_pad = original_context_pad
 
         elapsed = time.time() - start_time
         print(
@@ -145,9 +139,12 @@ class DatasetProcessor:
         tile_size = self.config.tiling.tile_size
         min_coverage = self.config.tiling.min_object_coverage
         resize_output = self.config.tiling.resize_output
+        context_pad = self.config.tiling.context_pad
 
         print(f"[{split_name}] Processing {len(images)} images")
         print(f"[{split_name}] Tile size: {tile_size} | Min coverage: {min_coverage}")
+        if context_pad:
+            print(f"[{split_name}] Context pad: {context_pad}px")
         if self.config.tiling.mode == "sage":
             print(
                 f"[{split_name}] Mode: SAGE | stride overlap {self.config.tiling.overlap_ratio * 100:.2f}%"
@@ -174,24 +171,28 @@ class DatasetProcessor:
                 image_annotations = annotations_by_image.get(original_image.id, [])
                 tile_counter = 0
 
-                for tile, tile_offset, scale_factor in self.tiling_engine.generate_tiles(img):
+                for generated_tile in self.tiling_engine.generate_tiles(img):
                     tile_annotations = self.tiling_engine.transform_annotations(
-                        image_annotations, tile_offset, scale_factor
+                        image_annotations,
+                        tile_offset=generated_tile.origin,
+                        tile_size=generated_tile.original_size,
+                        scale_factor=generated_tile.scale_factor,
                     )
 
                     if not tile_annotations and not keep_empty_tiles:
                         continue
 
                     stem = Path(original_image.file_name).stem
-                    tile_filename = f"{stem}_tile_{tile_offset[0]}_{tile_offset[1]}.jpg"
+                    grid_origin = generated_tile.grid_origin or generated_tile.origin
+                    tile_filename = f"{stem}_tile_{grid_origin[0]}_{grid_origin[1]}.jpg"
                     tile_output_path = os.path.join(output_dir, tile_filename)
                     os.makedirs(os.path.dirname(tile_output_path), exist_ok=True)
-                    tile.save(tile_output_path)
+                    generated_tile.image.save(tile_output_path)
 
                     new_image = CocoImage(
                         id=new_image_id,
-                        width=tile.width,
-                        height=tile.height,
+                        width=generated_tile.image.width,
+                        height=generated_tile.image.height,
                         file_name=tile_filename,
                     )
                     new_images.append(new_image)

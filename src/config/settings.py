@@ -8,6 +8,7 @@ class TilingConfig:
     tile_size: Tuple[int, int] = (512, 512)
     overlap: int = 0  # legacy pixel-based overlap
     overlap_ratio: float = 0.0  # used by adaptive strategies such as SAGE
+    context_pad: int = 0  # extra context pixels around each tile
     min_object_coverage: float = 0.3
     output_format: str = "COCO"
     resize_output: Optional[Tuple[int, int]] = None  # If set, resize tiles to this size after tiling
@@ -48,6 +49,7 @@ class AppConfig:
                 ),
                 overlap=int(os.getenv("TILE_OVERLAP", 0)),
                 overlap_ratio=float(os.getenv("TILE_OVERLAP_RATIO", 0.0)),
+                context_pad=int(os.getenv("TILE_CONTEXT_PAD", 0)),
                 min_object_coverage=float(os.getenv("MIN_OBJECT_COVERAGE", 0.3)),
                 output_format=os.getenv("OUTPUT_FORMAT", "COCO"),
                 resize_output=(
