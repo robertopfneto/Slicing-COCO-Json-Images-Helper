@@ -114,10 +114,12 @@ def draw_sage_grid(
         (255, 255, 0),
         (0, 255, 255),
     ]
+    grid_list = list(grid)
     img_copy = image.copy()
     height, width = image.shape[:2]
+    overlay = np.zeros_like(image)
 
-    for idx, (x1, y1, x2, y2) in enumerate(grid):
+    for idx, (x1, y1, x2, y2) in enumerate(grid_list):
         color = colors[idx % len(colors)]
         cv2.rectangle(img_copy, (x1, y1), (x2, y2), color, 2)
 
@@ -127,7 +129,37 @@ def draw_sage_grid(
             pad_x2 = min(width, x2 + context_pad)
             pad_y2 = min(height, y2 + context_pad)
             pad_color = tuple(int(c * 0.55) for c in color)
+            # Fill overlay with the pad color and carve out the tile interior
+            cv2.rectangle(overlay, (pad_x1, pad_y1), (pad_x2, pad_y2), pad_color, -1)
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), -1)
             cv2.rectangle(img_copy, (pad_x1, pad_y1), (pad_x2, pad_y2), pad_color, 1)
+
+    if context_pad > 0 and grid_list:
+        img_copy = cv2.addWeighted(overlay, 0.35, img_copy, 1.0, 0.0)
+        x1, y1, x2, y2 = grid_list[0]
+        pad_x1 = max(0, x1 - context_pad)
+        pad_y1 = max(0, y1 - context_pad)
+        label_pos = (pad_x1 + 10, max(20, pad_y1 - 10))
+        arrow_end = (pad_x1 + 10, pad_y1 + 10)
+        cv2.putText(
+            img_copy,
+            "Context padding area",
+            label_pos,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (250, 250, 250),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.arrowedLine(
+            img_copy,
+            (label_pos[0] + 10, label_pos[1] + 5),
+            arrow_end,
+            (250, 250, 250),
+            2,
+            cv2.LINE_AA,
+            tipLength=0.1,
+        )
 
     return img_copy
 
@@ -264,7 +296,8 @@ def main() -> None:
     plt.imshow(cv2.cvtColor(image_grid, cv2.COLOR_BGR2RGB))
     plt.title(
         f"SAGE Adaptive Grid (O*={overlap_ratio*100:.2f}%)\n"
-        f"Tiles: {nx}x{ny}  Tile={tile_size[0]}x{tile_size[1]}  Pad={context_pad}px"
+        f"Tiles: {nx}x{ny}  Tile={tile_size[0]}x{tile_size[1]}  "
+        f"Pad={context_pad}px  Stride={stride[0]:.1f}x{stride[1]:.1f}"
     )
     plt.axis("off")
     plt.savefig(preview_path, dpi=200, bbox_inches="tight")
