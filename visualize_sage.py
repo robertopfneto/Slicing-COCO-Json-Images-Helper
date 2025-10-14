@@ -50,10 +50,21 @@ def compute_sage_stride(image_shape, block_size=(640, 640), overlap=0.03, mode="
     return grid, (Sx, Sy), (nx, ny)
 
 
-def draw_sage_grid(image, grid, color=(0, 255, 0), thickness=2):
-    """Draw stride-aligned grid over the image."""
+def draw_sage_grid(image, grid, colors=None, thickness=2):
+    """Draw stride-aligned grid over the image with alternating colors."""
+    if colors is None:
+        colors = [
+            (0, 255, 0),
+            (0, 165, 255),
+            (255, 0, 0),
+            (255, 0, 255),
+            (255, 255, 0),
+            (0, 255, 255),
+        ]
     img_copy = image.copy()
-    for (x1, y1, x2, y2) in grid:
+    palette_size = len(colors)
+    for idx, (x1, y1, x2, y2) in enumerate(grid):
+        color = colors[idx % palette_size]
         cv2.rectangle(img_copy, (x1, y1), (x2, y2), color, thickness)
     return img_copy
 
@@ -149,7 +160,7 @@ def draw_bounding_boxes(image, coco_json, image_filename, color=(255, 0, 0)):
 # ===================== MAIN SCRIPT ===================== #
 
 def main():
-    image_path = "dataset/train/22_jpg.rf.5eabd33caec9acd4fe43e26018b32ece.jpg"
+    image_path = "dataset/train/9.jpg"
     coco_json = "dataset/train/_annotations.coco.json"
     output_dir = "sage_vis"
     os.makedirs(output_dir, exist_ok=True)
@@ -187,7 +198,7 @@ def main():
 
     # === 4️⃣ Draw results ===
     image_boxes = draw_bounding_boxes(image, coco_json, image_path, color=(255, 0, 0))
-    image_grid = draw_sage_grid(image_boxes, grid, color=(0, 255, 0), thickness=2)
+    image_grid = draw_sage_grid(image_boxes, grid, thickness=2)
 
     out_path = os.path.join(output_dir, "sage_adaptive_grid.jpg")
     cv2.imwrite(out_path, image_grid)

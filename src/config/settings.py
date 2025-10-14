@@ -6,10 +6,13 @@ import os
 @dataclass
 class TilingConfig:
     tile_size: Tuple[int, int] = (512, 512)
-    overlap: int = 0
+    overlap: int = 0  # legacy pixel-based overlap
+    overlap_ratio: float = 0.0  # used by adaptive strategies such as SAGE
     min_object_coverage: float = 0.3
     output_format: str = "COCO"
     resize_output: Optional[Tuple[int, int]] = None  # If set, resize tiles to this size after tiling
+    mode: str = "standard"  # "standard" or "sage"
+    keep_empty_tiles: bool = True
 
 
 @dataclass
@@ -44,13 +47,16 @@ class AppConfig:
                     int(os.getenv("TILE_HEIGHT", 512))
                 ),
                 overlap=int(os.getenv("TILE_OVERLAP", 0)),
+                overlap_ratio=float(os.getenv("TILE_OVERLAP_RATIO", 0.0)),
                 min_object_coverage=float(os.getenv("MIN_OBJECT_COVERAGE", 0.3)),
                 output_format=os.getenv("OUTPUT_FORMAT", "COCO"),
                 resize_output=(
                     (int(os.getenv("RESIZE_WIDTH")), int(os.getenv("RESIZE_HEIGHT")))
                     if os.getenv("RESIZE_WIDTH") and os.getenv("RESIZE_HEIGHT")
                     else None
-                )
+                ),
+                mode=os.getenv("TILING_MODE", "standard"),
+                keep_empty_tiles=os.getenv("KEEP_EMPTY_TILES", "True").strip().lower() == "true",
             ),
             dataset=DatasetConfig(
                 input_path=os.getenv("INPUT_PATH", "./dataset"),

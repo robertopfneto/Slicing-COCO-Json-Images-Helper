@@ -100,3 +100,6 @@ Thumbs.db
 # Conda environment exports
 environment_backup.yml
 ./eng_claude.
+*dataset
+src/core/tiling/__pycache__/engine.cpython-313.pyc
+src/services/dataset/__pycache__/processor.cpython-313.pyc

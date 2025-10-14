@@ -1,8 +1,8 @@
-from typing import List, Tuple, Generator
-import numpy as np
+from typing import Generator, List, Tuple
 from PIL import Image
 
 from src.config.settings import TilingConfig
+from src.core.tiling.sage import iter_sage_boxes
 from src.models.coco import CocoAnnotation
 
 
@@ -11,7 +11,14 @@ class TilingEngine:
         self.config = config
     
     def generate_tiles(self, image: Image.Image) -> Generator[Tuple[Image.Image, Tuple[int, int], float], None, None]:
-        """Generate tiles from an image with optional overlap and resizing."""
+        """Generate tiles from an image according to the configured strategy."""
+        if self.config.mode == "sage":
+            yield from self._generate_tiles_sage(image)
+        else:
+            yield from self._generate_tiles_standard(image)
+
+    def _generate_tiles_standard(self, image: Image.Image) -> Generator[Tuple[Image.Image, Tuple[int, int], float], None, None]:
+        """Generate tiles using the legacy sliding-window strategy."""
         img_width, img_height = image.size
         tile_width, tile_height = self.config.tile_size
         overlap = self.config.overlap
@@ -60,6 +67,24 @@ class TilingEngine:
             if self.config.resize_output:
                 tile = tile.resize(self.config.resize_output, Image.LANCZOS)
             yield tile, (x, y), scale_factor
+
+    def _generate_tiles_sage(self, image: Image.Image) -> Generator[Tuple[Image.Image, Tuple[int, int], float], None, None]:
+        """Generate tiles using the SAGE stride-aligned strategy."""
+        img_width, img_height = image.size
+        tile_width, tile_height = self.config.tile_size
+        overlap_ratio = max(0.0, min(self.config.overlap_ratio, 0.5))
+
+        # Calculate scaling factor if resize is enabled
+        scale_factor = 1.0
+        if self.config.resize_output:
+            resize_width, resize_height = self.config.resize_output
+            scale_factor = min(resize_width / tile_width, resize_height / tile_height)
+
+        for (x1, y1, x2, y2) in iter_sage_boxes((img_height, img_width), (tile_width, tile_height), overlap_ratio):
+            tile = image.crop((x1, y1, x2, y2))
+            if self.config.resize_output:
+                tile = tile.resize(self.config.resize_output, Image.LANCZOS)
+            yield tile, (x1, y1), scale_factor
     
     def transform_annotations(self, annotations: List[CocoAnnotation], 
                             tile_offset: Tuple[int, int], 
