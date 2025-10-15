@@ -34,6 +34,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.config.settings import AppConfig, DatasetConfig, ProcessingConfig, TilingConfig
 from src.models.coco import CocoDataset
 from src.services.dataset.processor import DatasetProcessor
+from src.utils.helpers import calculate_split_indices
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -44,6 +45,28 @@ SPLITS = ["train", "val", "test"]
 TILE_SIZE = (640, 640)
 MIN_OBJECT_COVERAGE = 0.3
 OUTPUT_ROOT = PROJECT_ROOT / "dataset" / "tiles" / "sage"
+
+
+def _get_fallback_split_ratios() -> Tuple[float, float, float]:
+    """Resolve fallback split ratios from percentage-based configuration."""
+    train_pct = float(os.getenv("TRAIN_IMR_PROP", "80"))
+    val_pct = float(os.getenv("VAL_IMR_PROP", "10"))
+    test_pct = float(os.getenv("TEST_IMR_PROP", "10"))
+
+    if any(value < 0 for value in (train_pct, val_pct, test_pct)):
+        raise ValueError("Split percentages must be non-negative.")
+
+    total_pct = train_pct + val_pct + test_pct
+    if total_pct <= 0:
+        raise ValueError("Split percentages must sum to a positive value.")
+
+    if abs(total_pct - 100.0) > 1e-3:
+        raise ValueError(
+            f"Split percentages must sum to 100.0 (got {total_pct}). "
+            "Adjust TRAIN_IMR_PROP, VAL_IMR_PROP, and TEST_IMR_PROP."
+        )
+
+    return train_pct / 100.0, val_pct / 100.0, test_pct / 100.0
 
 
 def _first_existing(paths: List[Path]) -> Optional[Path]:
@@ -168,26 +191,27 @@ def build_fallback_splits(annotations_path: Path) -> Dict[int, Dict[str, List[in
     if not image_ids:
         raise ValueError("No images found to build fallback folds.")
 
-    rng = random.Random(42)
-    rng.shuffle(image_ids)
-
-    fold_chunks: List[List[int]] = [image_ids[i::NUM_FOLDS] for i in range(NUM_FOLDS)]
+    train_ratio, val_ratio, test_ratio = _get_fallback_split_ratios()
 
     fold_splits: Dict[int, Dict[str, List[int]]] = {}
     for fold_idx in range(NUM_FOLDS):
-        test_ids = fold_chunks[fold_idx]
-        val_ids = fold_chunks[(fold_idx + 1) % NUM_FOLDS]
+        rng = random.Random(42 + fold_idx)
+        shuffled_ids = image_ids[:]
+        rng.shuffle(shuffled_ids)
 
-        train_ids: List[int] = []
-        for chunk_idx, chunk in enumerate(fold_chunks):
-            if chunk_idx not in {fold_idx, (fold_idx + 1) % NUM_FOLDS}:
-                train_ids.extend(chunk)
+        # Use deterministic shuffles per fold so that ratios can be honoured exactly.
+        split_ranges = calculate_split_indices(
+            total_count=len(shuffled_ids),
+            train_ratio=train_ratio,
+            val_ratio=val_ratio,
+            test_ratio=test_ratio,
+        )
 
         fold_splits[fold_idx + 1] = {
-            "train": train_ids,
-            "val": val_ids,
-            "test": test_ids,
-        }
+            "train": [shuffled_ids[i] for i in split_ranges["train"]],
+            "val": [shuffled_ids[i] for i in split_ranges["val"]],
+            "test": [shuffled_ids[i] for i in split_ranges["test"]],
+       }
 
     return fold_splits
 
@@ -331,6 +355,13 @@ def main() -> None:
         print(
             "[info] Fold JSON directory not found. "
             "Building cross-validation splits from dataset/train/_annotations.coco.json."
+        )
+        train_ratio, val_ratio, test_ratio = _get_fallback_split_ratios()
+        print(
+            "    Using fallback split configuration: "
+            f"train={train_ratio * 100:.1f}% | "
+            f"val={val_ratio * 100:.1f}% | "
+            f"test={test_ratio * 100:.1f}%"
         )
         fallback_splits = build_fallback_splits(BASE_DATASET_ANNOTATIONS)
         for fold_idx, split_map in fallback_splits.items():

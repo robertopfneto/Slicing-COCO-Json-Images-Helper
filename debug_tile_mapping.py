@@ -51,7 +51,7 @@ def debug_tile_mapping(original_dataset_path: str, tiled_dataset_path: str, targ
     # Check specific problematic tiles
     problem_tiles = [
         '112_jpg.rf.7ad9edc92c4e2368a5710d1e7c8a6ab9_tile_2048_1536.jpg',
-        '112_jpg.rf.7ad9edc92c4e2368a5710d1e7c8a6ab9_tile_1024_512.jpg'
+        '112_jpg.rf.7ad9edc92c4e2368a5710d1e7c8a6ab9_tile_1024_640.jpg'
     ]
     
     for tile_filename in problem_tiles:
@@ -80,15 +80,15 @@ def debug_tile_mapping(original_dataset_path: str, tiled_dataset_path: str, targ
         print(f"🖼️  Tile size: {actual_tile.size}")
         
         # Extract expected region from original
-        expected_tile = orig_img.crop((tile_x, tile_y, tile_x + 512, tile_y + 512))
+        expected_tile = orig_img.crop((tile_x, tile_y, tile_x + 640, tile_y + 640))
         
         # Get tile annotations from dataset
         tile_annotations = [ann for ann in tiled.annotations if ann.image_id == tile_info.id]
         print(f"🏷️  Tile annotations: {len(tile_annotations)}")
         
         # Create debug visualization
-        debug_width = 512 * 3 + 40  # 3 tiles side by side with margins
-        debug_height = 512 + 100    # space for labels
+        debug_width = 640 * 3 + 40  # 3 tiles side by side with margins
+        debug_height = 640 + 100    # space for labels
         
         debug_img = Image.new('RGB', (debug_width, debug_height), 'white')
         draw = ImageDraw.Draw(debug_img)
@@ -104,11 +104,11 @@ def debug_tile_mapping(original_dataset_path: str, tiled_dataset_path: str, targ
         debug_img.paste(actual_tile, (532, 80))
         
         # Create difference image
-        diff_img = Image.new('RGB', (512, 512), 'black')
+        diff_img = Image.new('RGB', (640, 640), 'black')
         diff_pixels = []
         
-        for y in range(512):
-            for x in range(512):
+        for y in range(640):
+            for x in range(640):
                 expected_px = expected_tile.getpixel((x, y))
                 actual_px = actual_tile.getpixel((x, y))
                 
