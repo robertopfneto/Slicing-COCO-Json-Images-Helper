@@ -57,6 +57,7 @@ class DatasetProcessor:
         
         # Initialize progress tracking
         processed_images = 0
+        skipped_images = 0
         generated_tiles = 0
         processed_annotations = 0
         
@@ -83,13 +84,18 @@ class DatasetProcessor:
             image_annotations = [ann for ann in original_dataset.annotations 
                                if ann.image_id == original_image.id]
             print(f"   🏷️  Annotations: {len(image_annotations)}")
+            if self.config.tiling.ignore_negative_samples and not image_annotations:
+                print("     Skipping image (no annotations and negative samples ignored)")
+                skipped_images += 1
+                continue
             
             # Track tiles for this image
             image_tile_count = 0
             
             # Generate tiles
-            for tile, tile_offset, scale_factor in self.tiling_engine.generate_tiles(image):
+            for tile, slice_bbox, scale_factor in self.tiling_engine.generate_tiles(image):
                 image_tile_count += 1
+                tile_offset = (slice_bbox[0], slice_bbox[1])
                 # Create new image entry
                 tile_filename = f"{Path(original_image.file_name).stem}_tile_{tile_offset[0]}_{tile_offset[1]}.jpg"
                 
@@ -108,7 +114,7 @@ class DatasetProcessor:
                 
                 # Transform annotations for this tile
                 tile_annotations = self.tiling_engine.transform_annotations(
-                    image_annotations, tile_offset, scale_factor
+                    image_annotations, slice_bbox, scale_factor
                 )
                 
                 # Update annotation IDs and image references
@@ -166,6 +172,8 @@ class DatasetProcessor:
         print(f"   📤 Generated tiles: {len(new_images)}")
         print(f"   📥 Original annotations: {len(original_dataset.annotations)}")
         print(f"   📤 Transformed annotations: {len(new_annotations)}")
+        if skipped_images:
+            print(f"   🚫 Skipped images: {skipped_images}")
         
         if len(new_annotations) > len(original_dataset.annotations):
             duplicates = len(new_annotations) - len(original_dataset.annotations)

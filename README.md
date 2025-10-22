@@ -1,6 +1,6 @@
 # Dataset Tiling Application
 
-A Configuration-Driven Architecture application for tiling images in Roboflow COCO datasets while preserving bounding box annotations.
+A Configuration-Driven Architecture application for tiling images in Roboflow COCO datasets while preserving bounding box annotations with SAHI.
 
 ## Features
 

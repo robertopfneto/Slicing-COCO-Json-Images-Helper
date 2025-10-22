@@ -30,6 +30,16 @@ def main():
                        help="Minimum object coverage to keep annotation")
     parser.add_argument("--resize-output", type=int, nargs=2, 
                        help="Resize output tiles to this size (width height)")
+    parser.add_argument("--auto-slice", action="store_true",
+                       help="Enable SAHI auto slice resolution heuristics")
+    parser.add_argument("--overlap-height-ratio", type=float,
+                       help="Fractional overlap ratio applied along the vertical axis")
+    parser.add_argument("--overlap-width-ratio", type=float,
+                       help="Fractional overlap ratio applied along the horizontal axis")
+    parser.add_argument("--min-area-ratio", type=float,
+                       help="Minimum retained annotation area ratio after slicing")
+    parser.add_argument("--ignore-negative-samples", action="store_true",
+                       help="Skip images without annotations when slicing")
     parser.add_argument("--validate", action="store_true", 
                        help="Validate output after processing")
     
@@ -51,6 +61,16 @@ def main():
         config.tiling.min_object_coverage = args.min_coverage
     if args.resize_output:
         config.tiling.resize_output = tuple(args.resize_output)
+    if args.auto_slice:
+        config.tiling.auto_slice_resolution = True
+    if args.overlap_height_ratio is not None:
+        config.tiling.overlap_height_ratio = args.overlap_height_ratio
+    if args.overlap_width_ratio is not None:
+        config.tiling.overlap_width_ratio = args.overlap_width_ratio
+    if args.min_area_ratio is not None:
+        config.tiling.min_area_ratio = args.min_area_ratio
+    if args.ignore_negative_samples:
+        config.tiling.ignore_negative_samples = True
     
     print("Dataset Tiling Application")
     print("=" * 40)
@@ -58,7 +78,23 @@ def main():
     print(f"Output path: {config.dataset.output_path}")
     print(f"Tile size: {config.tiling.tile_size}")
     print(f"Overlap: {config.tiling.overlap}")
+    if config.tiling.auto_slice_resolution:
+        print("Auto slice resolution: enabled")
+    overlap_height_ratio = config.tiling.overlap_height_ratio
+    overlap_width_ratio = config.tiling.overlap_width_ratio
+    if overlap_height_ratio is None and config.tiling.tile_size[1]:
+        overlap_height_ratio = config.tiling.overlap / config.tiling.tile_size[1]
+    if overlap_width_ratio is None and config.tiling.tile_size[0]:
+        overlap_width_ratio = config.tiling.overlap / config.tiling.tile_size[0]
+    print(
+        f"Overlap ratios (height, width): "
+        f"{overlap_height_ratio if overlap_height_ratio is not None else 0:.3f}, "
+        f"{overlap_width_ratio if overlap_width_ratio is not None else 0:.3f}"
+    )
     print(f"Min coverage: {config.tiling.min_object_coverage}")
+    print(f"Min area ratio: {config.tiling.min_area_ratio}")
+    if config.tiling.ignore_negative_samples:
+        print("Ignore negative samples: enabled")
     if config.tiling.resize_output:
         print(f"Resize output: {config.tiling.resize_output}")
     print("=" * 40)
