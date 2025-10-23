@@ -23,9 +23,9 @@ def main():
     parser.add_argument("--config", type=str, help="Path to configuration file")
     parser.add_argument("--input", type=str, default="./dataset", help="Input dataset path")
     parser.add_argument("--output", type=str, default="./output", help="Output dataset path")
-    parser.add_argument("--tile-size", type=int, nargs=2, default=[512, 512], 
+    parser.add_argument("--tile-size", type=int, nargs=2, default=[640, 640], 
                        help="Tile size (width height)")
-    parser.add_argument("--overlap", type=int, default=0, help="Tile overlap in pixels")
+    parser.add_argument("--overlap", type=int, default=40, help="Tile overlap in pixels")
     parser.add_argument("--min-coverage", type=float, default=0.3, 
                        help="Minimum object coverage to keep annotation")
     parser.add_argument("--resize-output", type=int, nargs=2, 
@@ -40,6 +40,12 @@ def main():
                        help="Minimum retained annotation area ratio after slicing")
     parser.add_argument("--ignore-negative-samples", action="store_true",
                        help="Skip images without annotations when slicing")
+    parser.add_argument("--folds", type=int,
+                       help="Number of cross-validation folds to generate")
+    parser.add_argument("--fold-seed", type=int,
+                       help="Random seed used for fold shuffling")
+    parser.add_argument("--no-fold-shuffle", action="store_true",
+                       help="Disable shuffling before assigning images to folds")
     parser.add_argument("--validate", action="store_true", 
                        help="Validate output after processing")
     
@@ -71,6 +77,12 @@ def main():
         config.tiling.min_area_ratio = args.min_area_ratio
     if args.ignore_negative_samples:
         config.tiling.ignore_negative_samples = True
+    if args.folds is not None:
+        config.processing.num_folds = max(1, args.folds)
+    if args.fold_seed is not None:
+        config.processing.fold_seed = args.fold_seed
+    if args.no_fold_shuffle:
+        config.processing.shuffle_folds = False
     
     print("Dataset Tiling Application")
     print("=" * 40)
@@ -97,6 +109,12 @@ def main():
         print("Ignore negative samples: enabled")
     if config.tiling.resize_output:
         print(f"Resize output: {config.tiling.resize_output}")
+    print(
+        "Cross-validation folds: "
+        f"{config.processing.num_folds} "
+        f"(shuffle={'yes' if config.processing.shuffle_folds else 'no'}, "
+        f"seed={config.processing.fold_seed})"
+    )
     print("=" * 40)
     
     # Validate input

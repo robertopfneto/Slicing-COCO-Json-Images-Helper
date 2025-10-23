@@ -5,8 +5,8 @@ import os
 
 @dataclass
 class TilingConfig:
-    tile_size: Tuple[int, int] = (512, 512)
-    overlap: int = 0
+    tile_size: Tuple[int, int] = (640, 640)
+    overlap: int = 40
     overlap_height_ratio: Optional[float] = None
     overlap_width_ratio: Optional[float] = None
     auto_slice_resolution: bool = False
@@ -34,6 +34,9 @@ class ProcessingConfig:
     num_workers: int = 4
     save_original_annotations: bool = True
     generate_tiles_only: bool = False
+    num_folds: int = 5
+    shuffle_folds: bool = True
+    fold_seed: int = 42
 
 
 @dataclass
@@ -47,10 +50,10 @@ class AppConfig:
         return cls(
             tiling=TilingConfig(
                 tile_size=(
-                    int(os.getenv("TILE_WIDTH", 512)),
-                    int(os.getenv("TILE_HEIGHT", 512))
+                    int(os.getenv("TILE_WIDTH", 640)),
+                    int(os.getenv("TILE_HEIGHT", 640))
                 ),
-                overlap=int(os.getenv("TILE_OVERLAP", 0)),
+                overlap=int(os.getenv("TILE_OVERLAP", 40)),
                 overlap_height_ratio=(
                     float(os.getenv("OVERLAP_HEIGHT_RATIO"))
                     if os.getenv("OVERLAP_HEIGHT_RATIO") is not None
@@ -87,6 +90,9 @@ class AppConfig:
                 batch_size=int(os.getenv("BATCH_SIZE", 32)),
                 num_workers=int(os.getenv("NUM_WORKERS", 4)),
                 save_original_annotations=bool(os.getenv("SAVE_ORIGINAL", True)),
-                generate_tiles_only=bool(os.getenv("TILES_ONLY", False))
+                generate_tiles_only=bool(os.getenv("TILES_ONLY", False)),
+                num_folds=int(os.getenv("NUM_FOLDS", 5)),
+                shuffle_folds=os.getenv("SHUFFLE_FOLDS", "true").lower() in {"1", "true", "yes"},
+                fold_seed=int(os.getenv("FOLD_SEED", 42))
             )
         )
