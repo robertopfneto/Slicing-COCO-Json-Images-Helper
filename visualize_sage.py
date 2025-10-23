@@ -241,7 +241,7 @@ def save_contact_sheet(tiles: List[GeneratedTile], output_path: Path, max_tiles:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    image_path = Path("dataset/train/9.jpg")
+    image_path = Path("dataset/train/2_jpg.rf.abab05c14fe2fb698fb39b966919cb6d.jpg")
     coco_json = Path("dataset/train/_annotations.coco.json")
     output_dir = Path("sage_vis")
     tile_size = (640, 640)
