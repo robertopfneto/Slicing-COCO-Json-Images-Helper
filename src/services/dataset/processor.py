@@ -2,10 +2,11 @@ import os
 import shutil
 import time
 import random
+import statistics
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 
 from PIL import Image
 
@@ -23,6 +24,12 @@ class DatasetProcessor:
         self.image_handler = ImageHandler()
         self.annotation_manager = AnnotationManager()
         self.rng = random.Random(config.processing.fold_seed)
+        self.adaptive_context: Optional[Dict[str, Any]] = None
+        self.adaptive_metrics: Dict[str, float] = {
+            "images": 0.0,
+            "baseline_tiles": 0.0,
+            "adaptive_tiles": 0.0,
+        }
 
         # Ensure base output directory exists
         os.makedirs(config.dataset.output_path, exist_ok=True)
@@ -53,6 +60,11 @@ class DatasetProcessor:
         if self.config.tiling.resize_output:
             print(f"Resize output: {self.config.tiling.resize_output}")
         print()
+
+        if self.config.tiling.adaptive_mode:
+            self.adaptive_context = self._build_adaptive_context(original_dataset)
+            self.tiling_engine.set_dataset_context(self.adaptive_context)
+            self._log_adaptive_context(self.adaptive_context)
 
         tile_root = self._prepare_output_root()
         num_folds = max(1, self.config.processing.num_folds)
@@ -141,6 +153,10 @@ class DatasetProcessor:
 
                     tile.close()
 
+            if self.config.tiling.adaptive_mode:
+                plan_summary = self.tiling_engine.get_last_plan_summary()
+                self._accumulate_adaptive_metrics(plan_summary)
+
             print(f"  Generated {image_tile_count} tiles")
             processed_images += 1
 
@@ -196,6 +212,8 @@ class DatasetProcessor:
         print(f"  Skipped images: {skipped_images}")
         print(f"  Cross-validation folds: {num_folds}")
         print(f"  Processing time: {elapsed_mins}m {elapsed_secs}s")
+        if self.config.tiling.adaptive_mode:
+            self._log_adaptive_summary()
         print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 60)
 
@@ -272,6 +290,106 @@ class DatasetProcessor:
             print("\nNo tiles without annotations were found.")
         else:
             print(f"\nTotal tiles removed without annotations: {total_removed}")
+
+    def _build_adaptive_context(self, dataset: CocoDataset) -> Dict[str, Any]:
+        valid_dims: List[Tuple[int, int]] = [
+            (image.width, image.height)
+            for image in dataset.images
+            if image.width and image.height
+        ]
+        if not valid_dims:
+            return {
+                "count": 0,
+                "mean_width": 0.0,
+                "mean_height": 0.0,
+                "median_width": 0.0,
+                "median_height": 0.0,
+                "mean_resolution": 0.0,
+                "median_resolution": 0.0,
+                "max_side": 0.0,
+                "ratio_over_ls": 0.0,
+                "ls_threshold": self.config.tiling.ls_threshold,
+            }
+
+        widths = [width for width, _ in valid_dims]
+        heights = [height for _, height in valid_dims]
+        resolutions = [width * height for width, height in valid_dims]
+        mean_width = statistics.mean(widths)
+        mean_height = statistics.mean(heights)
+        median_width = statistics.median(widths)
+        median_height = statistics.median(heights)
+        mean_resolution = statistics.mean(resolutions)
+        median_resolution = statistics.median(resolutions)
+        max_side = max(max(widths), max(heights))
+        ls_threshold = self.config.tiling.ls_threshold
+        over_ls = sum(1 for width, height in valid_dims if max(width, height) > ls_threshold)
+        ratio_over_ls = over_ls / len(valid_dims) if valid_dims else 0.0
+
+        return {
+            "count": len(valid_dims),
+            "mean_width": float(mean_width),
+            "mean_height": float(mean_height),
+            "median_width": float(median_width),
+            "median_height": float(median_height),
+            "mean_resolution": float(mean_resolution),
+            "median_resolution": float(median_resolution),
+            "max_side": float(max_side),
+            "ratio_over_ls": float(ratio_over_ls),
+            "ls_threshold": float(ls_threshold),
+        }
+
+    @staticmethod
+    def _log_adaptive_context(context: Dict[str, Any]) -> None:
+        print("ASAHI adaptive dataset context")
+        print("-" * 40)
+        print(f"  Samples analysed: {context.get('count', 0)}")
+        print(
+            "  Mean size: "
+            f"{context.get('mean_width', 0.0):.1f} x {context.get('mean_height', 0.0):.1f}"
+        )
+        print(
+            "  Median size: "
+            f"{context.get('median_width', 0.0):.1f} x {context.get('median_height', 0.0):.1f}"
+        )
+        print(f"  Max side length: {context.get('max_side', 0.0):.1f}")
+        print(
+            f"  LS threshold: {context.get('ls_threshold', 0.0):.2f} "
+            f"(>{context.get('ratio_over_ls', 0.0)*100:.1f}% images)"
+        )
+        print(
+            "  Mean/median resolution: "
+            f"{context.get('mean_resolution', 0.0):.1f} / {context.get('median_resolution', 0.0):.1f}"
+        )
+        print()
+
+    def _accumulate_adaptive_metrics(self, plan_summary: Dict[str, Any]) -> None:
+        if not plan_summary or plan_summary.get("mode") != "ASAHI":
+            return
+
+        self.adaptive_metrics["images"] += 1
+        self.adaptive_metrics["baseline_tiles"] += float(plan_summary.get("baseline_total", 0.0) or 0.0)
+        self.adaptive_metrics["adaptive_tiles"] += float(plan_summary.get("actual_total", 0.0) or 0.0)
+
+    def _log_adaptive_summary(self) -> None:
+        images = int(self.adaptive_metrics.get("images", 0))
+        if images <= 0:
+            return
+
+        baseline_tiles = self.adaptive_metrics.get("baseline_tiles", 0.0)
+        adaptive_tiles = self.adaptive_metrics.get("adaptive_tiles", 0.0)
+        avg_baseline = baseline_tiles / images if images else 0.0
+        avg_adaptive = adaptive_tiles / images if images else 0.0
+        redundancy = 0.0
+        if baseline_tiles > 0:
+            redundancy = max(0.0, 1.0 - (adaptive_tiles / baseline_tiles))
+
+        print("ASAHI tiling summary")
+        print("-" * 40)
+        print(f"  Images processed (adaptive): {images}")
+        print(f"  Avg baseline tiles per image: {avg_baseline:.2f}")
+        print(f"  Avg ASAHI tiles per image:   {avg_adaptive:.2f}")
+        print(f"  Estimated redundancy drop:   {redundancy * 100:.1f}%")
+        print()
 
     def _prepare_output_root(self) -> str:
         tile_root = os.path.join(self.config.dataset.output_path, "tile")

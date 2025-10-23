@@ -40,6 +40,16 @@ def main():
                        help="Minimum retained annotation area ratio after slicing")
     parser.add_argument("--ignore-negative-samples", action="store_true",
                        help="Skip images without annotations when slicing")
+    parser.add_argument("--adaptive-mode", action="store_true",
+                       help="Enable ASAHI adaptive slicing mode")
+    parser.add_argument("--restrict-size", type=int,
+                       help="Set base restrict size used for ASAHI LS calculation")
+    parser.add_argument("--overlap-ratio", type=float,
+                       help="Set overlap ratio (0-1) used in ASAHI adaptive slicing")
+    parser.add_argument("--ls-threshold", type=float,
+                       help="Override ASAHI LS threshold (auto-computed when omitted)")
+    parser.add_argument("--cluster-diou-nms", action="store_true",
+                       help="Enable Cluster-DIoU-NMS post-processing for adaptive full inference")
     parser.add_argument("--folds", type=int,
                        help="Number of cross-validation folds to generate")
     parser.add_argument("--fold-seed", type=int,
@@ -79,12 +89,27 @@ def main():
         config.tiling.min_area_ratio = args.min_area_ratio
     if args.ignore_negative_samples:
         config.tiling.ignore_negative_samples = True
+    if args.adaptive_mode:
+        config.tiling.adaptive_mode = True
+    if args.restrict_size is not None:
+        config.tiling.restrict_size = max(1, args.restrict_size)
+    if args.overlap_ratio is not None:
+        config.tiling.overlap_ratio = max(0.0, min(args.overlap_ratio, 1.0))
+    if args.ls_threshold is not None:
+        config.tiling.ls_threshold = args.ls_threshold
+    if args.cluster_diou_nms:
+        config.tiling.cluster_diou_nms = True
     if args.folds is not None:
         config.processing.num_folds = max(1, args.folds)
     if args.fold_seed is not None:
         config.processing.fold_seed = args.fold_seed
     if args.no_fold_shuffle:
         config.processing.shuffle_folds = False
+
+    if args.ls_threshold is None:
+        config.tiling.ls_threshold = (
+            config.tiling.restrict_size * (4 - 3 * config.tiling.overlap_ratio) + 1
+        )
     
     print("Dataset Tiling Application")
     print("=" * 40)
@@ -111,6 +136,12 @@ def main():
         print("Ignore negative samples: enabled")
     if config.tiling.resize_output:
         print(f"Resize output: {config.tiling.resize_output}")
+    print(f"ASAHI adaptive mode: {'enabled' if config.tiling.adaptive_mode else 'disabled'}")
+    if config.tiling.adaptive_mode:
+        print(f"  Restrict size: {config.tiling.restrict_size}")
+        print(f"  Overlap ratio: {config.tiling.overlap_ratio:.3f}")
+        print(f"  LS threshold (auto): {config.tiling.ls_threshold:.2f}")
+        print(f"  Cluster-DIoU-NMS: {'enabled' if config.tiling.cluster_diou_nms else 'disabled'}")
     print(
         "Cross-validation folds: "
         f"{config.processing.num_folds} "

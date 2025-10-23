@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Generator, Iterable, List, Optional, Tuple
+from typing import Generator, Iterable, List, Optional, Tuple, Dict, Any, Sequence, Union
 
 from PIL import Image
 from shapely.errors import TopologicalError
@@ -205,17 +205,36 @@ def _geometry_to_segmentation(
 
 
 class TilingEngine:
-    """Tile generator with annotation slicing logic adapted from SAHI."""
+    """Tile generator with annotation slicing logic adapted from SAHI/ASAHI."""
 
     def __init__(self, config: TilingConfig):
         self.config = config
+        self.dataset_context: Optional[Dict[str, Any]] = None
+        self._latest_plan_summary: Dict[str, Any] = {}
+
+    def set_dataset_context(self, context: Optional[Dict[str, Any]]) -> None:
+        """Store dataset-level statistics to drive adaptive logic."""
+        self.dataset_context = context
 
     def generate_tiles(
         self, image: Image.Image
     ) -> Generator[Tuple[Image.Image, Tuple[int, int, int, int], float], None, None]:
         """Yield cropped tiles along with their box and scale factor."""
         img_width, img_height = image.size
-        slice_bboxes = self._compute_slice_bboxes(img_width, img_height)
+
+        if self.config.adaptive_mode:
+            slice_bboxes, plan_summary = self._compute_asahi_tile_plan(img_width, img_height)
+        else:
+            slice_bboxes = self._compute_slice_bboxes(img_width, img_height)
+            plan_summary = {
+                "mode": "SAHI",
+                "actual_total": len(slice_bboxes),
+                "baseline_total": len(slice_bboxes),
+            }
+
+        self._latest_plan_summary = plan_summary
+        if plan_summary.get("mode") == "ASAHI" and self.config.verbose:
+            self._log_adaptive_plan(plan_summary)
 
         for bbox in slice_bboxes:
             tile = image.crop(bbox)
@@ -275,6 +294,132 @@ class TilingEngine:
             transformed_annotations.append(new_annotation)
 
         return transformed_annotations
+
+    def get_last_plan_summary(self) -> Dict[str, Any]:
+        return dict(self._latest_plan_summary)
+
+    def apply_cluster_diou_nms(
+        self, detections: Sequence[Union[Dict[str, Any], Any]]
+    ) -> Sequence[Union[Dict[str, Any], Any]]:
+        """
+        Optionally apply Cluster-DIoU-NMS post-processing to a batch of detections.
+        The method preserves the original payload type (dict or DetectionRecord).
+        """
+        if not self.config.cluster_diou_nms or not detections:
+            return detections
+
+        try:
+            from src.core.nms import DetectionRecord, cluster_diou_nms
+        except ImportError:
+            return detections
+
+        records = cluster_diou_nms(detections)  # type: ignore[arg-type]
+
+        sample = detections[0]
+        if isinstance(sample, DetectionRecord):
+            return records
+
+        normalised: List[Dict[str, Any]] = []
+        for record in records:
+            payload = dict(record.extra)
+            payload.update(
+                {
+                    "bbox": list(record.bbox),
+                    "score": record.score,
+                    "category_id": record.category_id,
+                }
+            )
+            normalised.append(payload)
+        return normalised
+
+    def _compute_asahi_tile_plan(
+        self, image_width: int, image_height: int
+    ) -> Tuple[List[Tuple[int, int, int, int]], Dict[str, Any]]:
+        longest_side = max(image_width, image_height)
+        ls_threshold = self.config.ls_threshold
+        layout_mode = "compact" if longest_side <= ls_threshold else "expanded"
+
+        if image_width >= image_height:
+            cols = 3 if layout_mode == "compact" else 4
+            rows = max(1, (6 if layout_mode == "compact" else 12) // cols)
+        else:
+            rows = 3 if layout_mode == "compact" else 4
+            cols = max(1, (6 if layout_mode == "compact" else 12) // rows)
+
+        tile_length = max(1, min(self.config.restrict_size, max(image_width, image_height)))
+        overlap_px = int(round(tile_length * self.config.overlap_ratio))
+        overlap_px = max(0, min(overlap_px, tile_length - 1))
+        stride = max(tile_length - overlap_px, 1)
+
+        x_positions = self._build_axis_positions(image_width, tile_length, stride, cols)
+        y_positions = self._build_axis_positions(image_height, tile_length, stride, rows)
+
+        bboxes: List[Tuple[int, int, int, int]] = []
+        for y in y_positions:
+            for x in x_positions:
+                right = min(image_width, x + tile_length)
+                bottom = min(image_height, y + tile_length)
+                bbox = (int(x), int(y), int(right), int(bottom))
+                if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
+                    continue
+                bboxes.append(bbox)
+
+        baseline_bboxes = self._compute_slice_bboxes(image_width, image_height)
+        baseline_total = len(baseline_bboxes) if baseline_bboxes else len(bboxes)
+        actual_total = len(bboxes)
+        ratio = actual_total / baseline_total if baseline_total else 1.0
+        redundancy_reduction = max(0.0, 1.0 - ratio)
+        time_reduction = redundancy_reduction  # proxy metric - assumes linear relation
+
+        summary = {
+            "mode": "ASAHI",
+            "layout": layout_mode,
+            "cols": len(x_positions),
+            "rows": len(y_positions),
+            "tile_length": tile_length,
+            "overlap_px": overlap_px,
+            "overlap_ratio": self.config.overlap_ratio,
+            "stride": stride,
+            "target_total": cols * rows,
+            "actual_total": actual_total,
+            "baseline_total": baseline_total,
+            "redundancy_reduction": redundancy_reduction,
+            "time_reduction": time_reduction,
+            "longest_side": longest_side,
+            "ls_threshold": ls_threshold,
+        }
+
+        return bboxes, summary
+
+    def _build_axis_positions(
+        self, axis_size: int, tile_length: int, stride: int, target_count: int
+    ) -> List[int]:
+        if target_count <= 1 or axis_size <= tile_length:
+            return [0]
+
+        max_offset = max(axis_size - tile_length, 0)
+        positions = [
+            int(round(min(idx * stride, max_offset)))
+            for idx in range(target_count)
+        ]
+
+        if len(set(positions)) < target_count and target_count > 1 and max_offset > 0:
+            step = max_offset / (target_count - 1)
+            positions = [int(round(step * idx)) for idx in range(target_count)]
+
+        positions[-1] = max_offset
+        return positions
+
+    def _log_adaptive_plan(self, summary: Dict[str, Any]) -> None:
+        print(
+            "  [ASAHI] plan "
+            f"{summary.get('rows', 0)}x{summary.get('cols', 0)} "
+            f"tiles={summary.get('actual_total', 0)} "
+            f"tile={summary.get('tile_length', 0)}px "
+            f"overlap={summary.get('overlap_ratio', 0.0):.2f} "
+            f"redundancy={summary.get('redundancy_reduction', 0.0)*100:.1f}% "
+            f"time_savings~{summary.get('time_reduction', 0.0)*100:.1f}%"
+        )
 
     def _compute_slice_bboxes(self, image_width: int, image_height: int) -> List[Tuple[int, int, int, int]]:
         if self.config.auto_slice_resolution:
