@@ -71,8 +71,14 @@ class BoundingBoxVisualizer:
         
         return img_with_boxes
     
-    def draw_tile_boundaries(self, image: Image.Image, tile_size: Tuple[int, int], 
-                            overlap: int = 0, highlight_tile: Optional[Tuple[int, int]] = None) -> Image.Image:
+    def draw_tile_boundaries(
+        self,
+        image: Image.Image,
+        tile_size: Tuple[int, int],
+        overlap: int = 0,
+        highlight_tile: Optional[Tuple[int, int]] = None,
+        tile_bboxes: Optional[List[Tuple[int, int, int, int]]] = None,
+    ) -> Image.Image:
         """Draw tile boundaries on an image to show how it would be sliced."""
         img_with_tiles = image.copy()
         draw = ImageDraw.Draw(img_with_tiles)
@@ -82,6 +88,35 @@ class BoundingBoxVisualizer:
         step_x = tile_width - overlap
         step_y = tile_height - overlap
         
+        line_width = max(2, int(max(img_width, img_height) / 1000))  # Dynamic line width
+        
+        if tile_bboxes:
+            for i, (x1, y1, x2, y2) in enumerate(tile_bboxes):
+                color = '#00FFFF'
+                width = line_width
+                draw.rectangle([x1, y1, x2, y2], outline=color, width=width)
+
+                font_size = max(12, int(max(img_width, img_height) / 200))
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+                except:
+                    font = ImageFont.load_default()
+
+                tile_label = f"T{i+1}"
+                bbox = draw.textbbox((0, 0), tile_label, font=font)
+                label_width = bbox[2] - bbox[0]
+                label_height = bbox[3] - bbox[1]
+
+                label_x = x1 + 5
+                label_y = y1 + 5
+                draw.rectangle(
+                    [label_x - 2, label_y - 2, label_x + label_width + 2, label_y + label_height + 2],
+                    fill='white',
+                    outline='black',
+                )
+                draw.text((label_x, label_y), tile_label, fill='black', font=font)
+            return img_with_tiles
+
         # Generate tile positions (same logic as TilingEngine)
         tile_positions = []
         
@@ -108,7 +143,6 @@ class BoundingBoxVisualizer:
             tile_positions.append((x, y))
         
         # Draw tile boundaries
-        line_width = max(2, int(max(img_width, img_height) / 1000))  # Dynamic line width
         
         for i, (x, y) in enumerate(tile_positions):
             # Choose color and width for highlighting
@@ -191,9 +225,17 @@ class BoundingBoxVisualizer:
         
         return comparison
     
-    def create_tiling_overview(self, image: Image.Image, annotations: List[CocoAnnotation], 
-                              categories: dict, tile_size: Tuple[int, int] = (512, 512), 
-                              overlap: int = 0, max_width: int = 1600) -> Image.Image:
+    def create_tiling_overview(
+        self,
+        image: Image.Image,
+        annotations: List[CocoAnnotation],
+        categories: dict,
+        tile_size: Tuple[int, int] = (512, 512),
+        overlap: int = 0,
+        max_width: int = 1600,
+        tile_bboxes: Optional[List[Tuple[int, int, int, int]]] = None,
+        info_text: Optional[str] = None,
+    ) -> Image.Image:
         """Create an overview showing the complete tiling grid with annotations."""
         
         # Scale image if too large for overview
@@ -203,11 +245,24 @@ class BoundingBoxVisualizer:
             new_width = max_width
             new_height = int(img_height * scale_factor)
             scaled_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            
+             
             # Scale tile size and annotations accordingly
             scaled_tile_size = (int(tile_size[0] * scale_factor), int(tile_size[1] * scale_factor))
             scaled_overlap = int(overlap * scale_factor)
-            
+            scaled_tile_bboxes = (
+                [
+                    (
+                        int(bbox[0] * scale_factor),
+                        int(bbox[1] * scale_factor),
+                        int(bbox[2] * scale_factor),
+                        int(bbox[3] * scale_factor),
+                    )
+                    for bbox in tile_bboxes
+                ]
+                if tile_bboxes
+                else None
+            )
+             
             # Scale annotations
             scaled_annotations = []
             for ann in annotations:
@@ -227,10 +282,16 @@ class BoundingBoxVisualizer:
             scaled_tile_size = tile_size
             scaled_overlap = overlap
             scaled_annotations = annotations
+            scaled_tile_bboxes = tile_bboxes
             scale_factor = 1.0
         
         # Draw tile boundaries first
-        img_with_tiles = self.draw_tile_boundaries(scaled_image, scaled_tile_size, scaled_overlap)
+        img_with_tiles = self.draw_tile_boundaries(
+            scaled_image,
+            scaled_tile_size,
+            scaled_overlap,
+            tile_bboxes=scaled_tile_bboxes,
+        )
         
         # Draw annotations on top
         final_image = self.draw_bounding_boxes(img_with_tiles, scaled_annotations, categories)
@@ -254,7 +315,13 @@ class BoundingBoxVisualizer:
         title = "Tiling Overview with Annotations"
         draw.text((10, 10), title, fill='black', font=title_font)
         
-        info_text = f"Original: {img_width}x{img_height} | Tile: {tile_size[0]}x{tile_size[1]} | Overlap: {overlap}px | Scale: {scale_factor:.2f}"
+        if info_text is None:
+            info_text = (
+                f"Original: {img_width}x{img_height} | "
+                f"Tile: {tile_size[0]}x{tile_size[1]} | "
+                f"Overlap: {overlap}px | "
+                f"Scale: {scale_factor:.2f}"
+            )
         draw.text((10, 40), info_text, fill='blue', font=info_font)
         
         # Paste the main image
