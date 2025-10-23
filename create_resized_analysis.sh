@@ -37,13 +37,14 @@ else
   exit 1
 fi
 
-TILED_DATASET="${SAGE_ROOT}/${FOLD_NAME}/${SPLIT_NAME}"
+TILED_DATASET_BASE="${SAGE_ROOT}/${FOLD_NAME}"
+TILED_SPLIT_PATH="${TILED_DATASET_BASE}/${SPLIT_NAME}"
 ANALYSIS_ROOT="${SCRIPT_DIR}/sage_analysis"
 ANALYSIS_OUTPUT="${ANALYSIS_ROOT}/${FOLD_NAME}_${SPLIT_NAME}"
 
 echo "Configuration:"
 echo "  Original dataset : ${ORIGINAL_DATASET}"
-echo "  SAGE dataset     : ${TILED_DATASET}"
+echo "  SAGE dataset     : ${TILED_SPLIT_PATH}"
 echo "  Output directory : ${ANALYSIS_OUTPUT}"
 echo "  Fold / split     : ${FOLD_NAME} / ${SPLIT_NAME}"
 echo "  Sample pairs     : ${SAMPLES}"
@@ -74,14 +75,20 @@ if [ ! -f "${ORIGINAL_DATASET}/train/_annotations.coco.json" ]; then
   exit 1
 fi
 
-if [ ! -d "${TILED_DATASET}" ]; then
-  echo "ERROR: SAGE split not found: ${TILED_DATASET}"
-  echo "Make sure the requested fold/split exists."
+if [ ! -d "${TILED_DATASET_BASE}" ]; then
+  echo "ERROR: SAGE fold not found: ${TILED_DATASET_BASE}"
+  echo "Make sure the requested fold exists."
   exit 1
 fi
 
-if [ ! -f "${TILED_DATASET}/_annotations.coco.json" ]; then
-  echo "ERROR: SAGE annotations not found at ${TILED_DATASET}/_annotations.coco.json"
+if [ ! -d "${TILED_SPLIT_PATH}" ]; then
+  echo "ERROR: SAGE split not found: ${TILED_SPLIT_PATH}"
+  echo "Make sure the requested split exists."
+  exit 1
+fi
+
+if [ ! -f "${TILED_SPLIT_PATH}/_annotations.coco.json" ]; then
+  echo "ERROR: SAGE annotations not found at ${TILED_SPLIT_PATH}/_annotations.coco.json"
   exit 1
 fi
 
@@ -96,7 +103,8 @@ echo ""
 
 python3 "${SCRIPT_DIR}/compare_datasets.py" \
   --original "${ORIGINAL_DATASET}" \
-  --tiled "${TILED_DATASET}" \
+  --tiled "${TILED_DATASET_BASE}" \
+  --tiled-split "${SPLIT_NAME}" \
   --output "${ANALYSIS_OUTPUT}" \
   --samples "${SAMPLES}" \
   --overview
