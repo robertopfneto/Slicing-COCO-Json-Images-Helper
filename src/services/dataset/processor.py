@@ -38,6 +38,11 @@ class DatasetProcessor:
             raise FileNotFoundError(f"Annotations file not found: {annotations_path}")
 
         original_dataset = CocoDataset.from_json(annotations_path)
+        if self.config.tiling.ignore_negative_samples:
+            original_dataset, removed_images = self._filter_unannotated_images(original_dataset)
+            if removed_images:
+                print(f"Removed {len(removed_images)} images without annotations before tiling")
+                print()
         total_images = len(original_dataset.images)
         total_annotations = len(original_dataset.annotations)
 
@@ -227,6 +232,47 @@ class DatasetProcessor:
 
         return True
 
+    def clean_fold_train_without_annotations(self) -> None:
+        """Remove train tiles without annotations from existing fold outputs."""
+        tile_root = os.path.join(self.config.dataset.output_path, "tile")
+        if not os.path.isdir(tile_root):
+            print(f"No tile directory found at: {tile_root}")
+            return
+
+        fold_dirs = sorted(name for name in os.listdir(tile_root) if name.startswith("fold_"))
+        if not fold_dirs:
+            print("No fold directories found to clean.")
+            return
+
+        total_removed = 0
+        for fold_name in fold_dirs:
+            train_dir = os.path.join(tile_root, fold_name, "train")
+            annotations_path = os.path.join(train_dir, "_annotations.coco.json")
+
+            if not os.path.isdir(train_dir) or not os.path.exists(annotations_path):
+                continue
+
+            dataset = CocoDataset.from_json(annotations_path)
+            cleaned_dataset, removed_images = self._filter_unannotated_images(dataset)
+
+            if not removed_images:
+                print(f" Fold {fold_name}: no empty tiles detected.")
+                continue
+
+            for image in removed_images:
+                image_path = os.path.join(train_dir, image.file_name)
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+
+            cleaned_dataset.save_json(annotations_path)
+            print(f" Fold {fold_name}: removed {len(removed_images)} tiles without annotations.")
+            total_removed += len(removed_images)
+
+        if total_removed == 0:
+            print("\nNo tiles without annotations were found.")
+        else:
+            print(f"\nTotal tiles removed without annotations: {total_removed}")
+
     def _prepare_output_root(self) -> str:
         tile_root = os.path.join(self.config.dataset.output_path, "tile")
         if os.path.exists(tile_root):
@@ -326,6 +372,37 @@ class DatasetProcessor:
                     "annotation_count": 0,
                 }
         return storage
+
+    @staticmethod
+    def _filter_unannotated_images(dataset: CocoDataset) -> Tuple[CocoDataset, List[CocoImage]]:
+        annotations_by_image: Dict[int, List[CocoAnnotation]] = {}
+        for annotation in dataset.annotations:
+            annotations_by_image.setdefault(annotation.image_id, []).append(annotation)
+
+        filtered_images: List[CocoImage] = []
+        filtered_annotations: List[CocoAnnotation] = []
+        removed_images: List[CocoImage] = []
+
+        for image in dataset.images:
+            image_annotations = annotations_by_image.get(image.id, [])
+            if image_annotations:
+                filtered_images.append(image)
+                filtered_annotations.extend(image_annotations)
+            else:
+                removed_images.append(image)
+
+        if not removed_images:
+            return dataset, []
+
+        cleaned_dataset = CocoDataset(
+            info=dataset.info,
+            licenses=dataset.licenses,
+            images=filtered_images,
+            annotations=filtered_annotations,
+            categories=dataset.categories,
+        )
+
+        return cleaned_dataset, removed_images
 
     @staticmethod
     def _ensure_split_dir(tile_root: str, fold_idx: int, split_name: str) -> str:

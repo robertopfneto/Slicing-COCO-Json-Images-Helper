@@ -14,7 +14,7 @@ class TilingConfig:
     min_area_ratio: float = 0.1
     output_format: str = "COCO"
     resize_output: Optional[Tuple[int, int]] = None  # If set, resize tiles to this size after tiling
-    ignore_negative_samples: bool = False
+    ignore_negative_samples: bool = True
     verbose: bool = False
     exif_fix: bool = True
 
@@ -74,7 +74,7 @@ class AppConfig:
                     if os.getenv("RESIZE_WIDTH") and os.getenv("RESIZE_HEIGHT")
                     else None
                 ),
-                ignore_negative_samples=os.getenv("IGNORE_NEGATIVE_SAMPLES", "false").lower()
+                ignore_negative_samples=os.getenv("IGNORE_NEGATIVE_SAMPLES", "true").lower()
                 in {"1", "true", "yes"},
                 verbose=os.getenv("SAHI_VERBOSE", "false").lower() in {"1", "true", "yes"},
                 exif_fix=os.getenv("SAHI_EXIF_FIX", "true").lower() not in {"0", "false", "no"}

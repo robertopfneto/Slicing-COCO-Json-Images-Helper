@@ -46,6 +46,8 @@ def main():
                        help="Random seed used for fold shuffling")
     parser.add_argument("--no-fold-shuffle", action="store_true",
                        help="Disable shuffling before assigning images to folds")
+    parser.add_argument("--clean-output", action="store_true",
+                       help="Remove tiles without annotations from each fold's train split")
     parser.add_argument("--validate", action="store_true", 
                        help="Validate output after processing")
     
@@ -117,19 +119,26 @@ def main():
     )
     print("=" * 40)
     
-    # Validate input
-    if not os.path.exists(config.dataset.input_path):
-        print(f"Error: Input path does not exist: {config.dataset.input_path}")
-        sys.exit(1)
-    
-    annotations_path = os.path.join(config.dataset.input_path, "train", "_annotations.coco.json")
-    if not os.path.exists(annotations_path):
-        print(f"Error: Annotations file not found: {annotations_path}")
-        sys.exit(1)
-    
     try:
-        # Process dataset
         processor = DatasetProcessor(config)
+        
+        if args.clean_output:
+            processor.clean_fold_train_without_annotations()
+            print()
+            print(" Output cleanup completed successfully!")
+            return
+        
+        # Validate input
+        if not os.path.exists(config.dataset.input_path):
+            print(f"Error: Input path does not exist: {config.dataset.input_path}")
+            sys.exit(1)
+        
+        annotations_path = os.path.join(config.dataset.input_path, "train", "_annotations.coco.json")
+        if not os.path.exists(annotations_path):
+            print(f"Error: Annotations file not found: {annotations_path}")
+            sys.exit(1)
+        
+        # Process dataset
         processor.process_dataset()
         
         # Validate if requested

@@ -54,6 +54,12 @@ python app.py \
   --validate
 ```
 
+### Clean Existing Tiles
+
+```bash
+python app.py --output ./output --clean-output
+```
+
 ### Configuration via Environment Variables
 
 ```bash
@@ -72,6 +78,7 @@ python app.py
 - `TILE_WIDTH`, `TILE_HEIGHT`: Tile dimensions (default: 640x640)
 - `TILE_OVERLAP`: Overlap between tiles in pixels (default: 40)
 - `MIN_OBJECT_COVERAGE`: Minimum fraction of object that must be visible (default: 0.3)
+- `IGNORE_NEGATIVE_SAMPLES`: Skip images without annotations when tiling (default: true)
 - `INPUT_PATH`: Input dataset directory (default: ./dataset)
 - `OUTPUT_PATH`: Output directory (default: ./output)
 
