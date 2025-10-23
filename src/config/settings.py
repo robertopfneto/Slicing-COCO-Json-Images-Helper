@@ -33,8 +33,8 @@ class TilingConfig:
     ignore_negative_samples: bool = True
     verbose: bool = False
     exif_fix: bool = True
-    adaptive_mode: bool = False
-    restrict_size: int = 512
+    adaptive_mode: bool = True
+    restrict_size: int = 640
     overlap_ratio: float = 0.15
     ls_threshold: float = 0.0
     cluster_diou_nms: bool = False
@@ -68,7 +68,7 @@ class AppConfig:
     
     @classmethod
     def from_env(cls):
-        restrict_size = int(os.getenv("ASAHI_RESTRICT_SIZE", 512))
+        restrict_size = int(os.getenv("ASAHI_RESTRICT_SIZE", 640))
         overlap_ratio = float(os.getenv("ASAHI_OVERLAP_RATIO", 0.15))
         ls_threshold_env = os.getenv("ASAHI_LS_THRESHOLD")
         try:
@@ -107,7 +107,7 @@ class AppConfig:
                 ignore_negative_samples=_env_bool("IGNORE_NEGATIVE_SAMPLES", True),
                 verbose=_env_bool("SAHI_VERBOSE", False),
                 exif_fix=_env_bool("SAHI_EXIF_FIX", True),
-                adaptive_mode=_env_bool("ASAHI_ADAPTIVE_MODE", False),
+                adaptive_mode=_env_bool("ASAHI_ADAPTIVE_MODE", True),
                 restrict_size=restrict_size,
                 overlap_ratio=overlap_ratio,
                 ls_threshold=ls_threshold,
