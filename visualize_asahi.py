@@ -86,12 +86,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--adaptive",
         action="store_true",
+        default=True,
         help="Enable ASAHI adaptive slicing mode.",
     )
     parser.add_argument(
         "--restrict-size",
         type=int,
-        default=512,
+        default=640,
         help="Base restrict size used for ASAHI LS calculation.",
     )
     parser.add_argument(
@@ -387,14 +388,38 @@ def main() -> None:
     print("\nResolved tiling parameters:")
     if tiling_config.adaptive_mode and plan_summary:
         print(f"  Mode: ASAHI ({plan_summary.get('layout', 'unknown')})")
-        print(f"  Tile count: {plan_summary.get('actual_total', 0)}")
-        print(f"  Tile size: {plan_summary.get('tile_length', 0)} px square")
-        print(f"  Overlap ratio: {plan_summary.get('overlap_ratio', 0.0):.3f}")
-        print(f"  Overlap px: {plan_summary.get('overlap_px', 0)}")
-        print(f"  Stride: {plan_summary.get('stride', 0)}")
+        cols = plan_summary.get("cols", plan_summary.get("a", 0))
+        rows = plan_summary.get("rows", plan_summary.get("b", 0))
+        tiles_total = plan_summary.get("tiles_total", plan_summary.get("actual_total", 0))
+        print(f"  Tile grid: {cols} x {rows} ({tiles_total} tiles)")
+        tile_w, tile_h = plan_summary.get(
+            "tile_size",
+            (plan_summary.get("tile_length", 0), plan_summary.get("tile_length", 0)),
+        )
+        print(f"  Tile size: {tile_w} x {tile_h} px")
+        stride_x_summary, stride_y_summary = plan_summary.get(
+            "stride_xy", (plan_summary.get("stride", 0), plan_summary.get("stride", 0))
+        )
+        print(f"  Stride: {stride_x_summary} x {stride_y_summary} px")
+        overlap_px_x, overlap_px_y = plan_summary.get(
+            "overlap_px_xy",
+            (plan_summary.get("overlap_px", 0), plan_summary.get("overlap_px", 0)),
+        )
+        print(f"  Overlap (px): x={overlap_px_x}, y={overlap_px_y}")
+        overlap_ratio_x = plan_summary.get(
+            "overlap_ratio_x", plan_summary.get("overlap_ratio", 0.0)
+        )
+        overlap_ratio_y = plan_summary.get(
+            "overlap_ratio_y", plan_summary.get("overlap_ratio", 0.0)
+        )
+        print(
+            "  Overlap (ratio): "
+            f"x={overlap_ratio_x:.3f}, y={overlap_ratio_y:.3f}"
+        )
         redundancy = plan_summary.get("redundancy_reduction", 0.0) * 100
         print(f"  Estimated redundancy reduction: {redundancy:.1f}%")
         print(f"  LS threshold: {plan_summary.get('ls_threshold', 0.0):.2f}")
+        stride_x, stride_y = stride_x_summary, stride_y_summary
     else:
         if tiling_config.auto_slice_resolution:
             x_overlap_px, y_overlap_px, slice_width, slice_height = get_auto_slice_params(
@@ -444,10 +469,13 @@ def main() -> None:
     ]
     if tiling_config.adaptive_mode and plan_summary:
         title_parts.append(
-            f"Overlap: {plan_summary.get('overlap_ratio', 0.0)*100:.1f}%"
+            f"Tile {tile_w}x{tile_h}px"
         )
         title_parts.append(
-            f"Redundancy↓ {plan_summary.get('redundancy_reduction', 0.0)*100:.1f}%"
+            f"Overlap ~ {plan_summary.get('overlap_ratio', 0.0)*100:.1f}%"
+        )
+        title_parts.append(
+            f"Redundancy drop {plan_summary.get('redundancy_reduction', 0.0)*100:.1f}%"
         )
     plt.title("  |  ".join(title_parts))
     plt.axis("off")

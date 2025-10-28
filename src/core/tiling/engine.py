@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Generator, Iterable, List, Optional, Tuple, Dict, Any, Sequence, Union
 
 from PIL import Image
@@ -335,58 +336,164 @@ class TilingEngine:
     def _compute_asahi_tile_plan(
         self, image_width: int, image_height: int
     ) -> Tuple[List[Tuple[int, int, int, int]], Dict[str, Any]]:
-        longest_side = max(image_width, image_height)
-        ls_threshold = self.config.ls_threshold
+        """
+        Compute the adaptive slicing layout following the ASAHI algorithm
+        (Adaptive Slicing-Aided Hyper Inference, Zhang et al., Remote Sens. 2023).
+
+        The method adaptively adjusts the tile size `p` according to image
+        resolution and overlap ratio `l`, maintaining a fixed number of tiles
+        (6 or 12) depending on the adaptive threshold `LS`.
+
+        Behaviour summary:
+          • If max(W, H) ≤ LS → compact mode (approx. 6 tiles)
+          • If max(W, H) > LS → expanded mode (approx. 12 tiles)
+          • Each tile is cropped with overlap ratio l and later resized to 640×640.
+          • Redundancy and time reduction are computed per ASAHI Eq. (8–10).
+        """
+        W = float(max(image_width, 1))
+        H = float(max(image_height, 1))
+        requested_overlap_ratio = float(self.config.overlap_ratio or 0.0)
+        overlap_ratio = min(max(requested_overlap_ratio, 0.0), 0.95)
+
+        raw_restrict = int(self.config.restrict_size or 0)
+        restrict_size = max(raw_restrict, 640) if raw_restrict > 0 else 640
+        default_ls = restrict_size * (4 - 3 * overlap_ratio) + 1
+        configured_ls = float(self.config.ls_threshold or 0.0)
+        ls_threshold = configured_ls if configured_ls > 0 else default_ls
+
+        longest_side = max(W, H)
         layout_mode = "compact" if longest_side <= ls_threshold else "expanded"
 
-        if image_width >= image_height:
-            cols = 3 if layout_mode == "compact" else 4
-            rows = max(1, (6 if layout_mode == "compact" else 12) // cols)
+        epsilon = 1e-6
+        if layout_mode == "compact":
+            denom_w = max(3 - 2 * overlap_ratio, epsilon)
+            denom_h = max(2 - overlap_ratio, epsilon)
+            base_cols, base_rows = 3, 2
         else:
-            rows = 3 if layout_mode == "compact" else 4
-            cols = max(1, (6 if layout_mode == "compact" else 12) // rows)
+            denom_w = max(4 - 3 * overlap_ratio, epsilon)
+            denom_h = max(3 - 2 * overlap_ratio, epsilon)
+            base_cols, base_rows = 4, 3
 
-        tile_length = max(1, min(self.config.restrict_size, max(image_width, image_height)))
-        overlap_px = int(round(tile_length * self.config.overlap_ratio))
+        p_w = W / denom_w + 1.0
+        p_h = H / denom_h + 1.0
+        p = max(p_w, p_h)
+        tile_length = max(1, int(math.ceil(p)))
+        tile_length = min(tile_length, restrict_size, 640)
+
+        overlap_px = int(round(tile_length * overlap_ratio))
         overlap_px = max(0, min(overlap_px, tile_length - 1))
-        stride = max(tile_length - overlap_px, 1)
+        stride = max(1, tile_length - overlap_px)
 
-        x_positions = self._build_axis_positions(image_width, tile_length, stride, cols)
-        y_positions = self._build_axis_positions(image_height, tile_length, stride, rows)
+        def _compute_axis_positions(
+            axis_size: int, tile_extent: int, step: int, target_min: int
+        ) -> List[int]:
+            if axis_size <= tile_extent or step <= 0:
+                return [0]
+            max_offset = max(axis_size - tile_extent, 0)
+            positions: List[int] = [0]
+            pos = step
+            while pos < max_offset:
+                positions.append(int(round(pos)))
+                pos += step
+            positions.append(int(max_offset))
+            positions = sorted(set(max(0, min(p, max_offset)) for p in positions))
+            if target_min > 1 and len(positions) < target_min and max_offset > 0:
+                linear_step = max_offset / (target_min - 1)
+                positions = [int(round(linear_step * idx)) for idx in range(target_min)]
+            if positions:
+                positions[0] = 0
+                positions[-1] = int(max_offset)
+            return positions or [0]
+
+        cols = max(
+            base_cols,
+            int(math.ceil(max(image_width - tile_length, 0) / max(stride, 1))) + 1
+            if image_width > tile_length
+            else 1,
+        )
+        rows = max(
+            base_rows,
+            int(math.ceil(max(image_height - tile_length, 0) / max(stride, 1))) + 1
+            if image_height > tile_length
+            else 1,
+        )
+
+        x_positions = _compute_axis_positions(image_width, tile_length, stride, cols)
+        y_positions = _compute_axis_positions(image_height, tile_length, stride, rows)
+
+        a = len(x_positions)
+        b = len(y_positions)
 
         bboxes: List[Tuple[int, int, int, int]] = []
         for y in y_positions:
             for x in x_positions:
                 right = min(image_width, x + tile_length)
                 bottom = min(image_height, y + tile_length)
-                bbox = (int(x), int(y), int(right), int(bottom))
-                if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
+                if right <= x or bottom <= y:
                     continue
-                bboxes.append(bbox)
+                bboxes.append((int(x), int(y), int(right), int(bottom)))
+
+        if not bboxes:
+            bboxes = [(0, 0, image_width, image_height)]
 
         baseline_bboxes = self._compute_slice_bboxes(image_width, image_height)
         baseline_total = len(baseline_bboxes) if baseline_bboxes else len(bboxes)
         actual_total = len(bboxes)
-        ratio = actual_total / baseline_total if baseline_total else 1.0
-        redundancy_reduction = max(0.0, 1.0 - ratio)
-        time_reduction = redundancy_reduction  # proxy metric - assumes linear relation
+        tile_ratio = actual_total / baseline_total if baseline_total else 1.0
+        tile_count_reduction = max(0.0, 1.0 - tile_ratio)
+
+        unique_x_widths = {
+            x: min(tile_length, max(image_width - x, 0))
+            for x in x_positions
+        }
+        unique_y_heights = {
+            y: min(tile_length, max(image_height - y, 0))
+            for y in y_positions
+        }
+
+        redundancy_x = max(
+            0.0, float(sum(unique_x_widths.values())) - float(image_width)
+        )
+        redundancy_y = max(
+            0.0, float(sum(unique_y_heights.values())) - float(image_height)
+        )
+        sredundancy = redundancy_x * H + redundancy_y * W - redundancy_x * redundancy_y
+        sredundancy = max(0.0, sredundancy)
+        sarea = W * H if W > 0 and H > 0 else 0.0
+        redundancy_ratio = (sredundancy / sarea) if sarea > 0 else 0.0
+        redundancy_ratio = max(0.0, min(redundancy_ratio, 1.0))
+        time_reduction = redundancy_ratio
+
+        actual_overlap_ratio = overlap_px / tile_length if tile_length else 0.0
 
         summary = {
             "mode": "ASAHI",
             "layout": layout_mode,
-            "cols": len(x_positions),
-            "rows": len(y_positions),
+            "a": a,
+            "b": b,
+            "cols": a,
+            "rows": b,
             "tile_length": tile_length,
-            "overlap_px": overlap_px,
-            "overlap_ratio": self.config.overlap_ratio,
+            "tile_size": (tile_length, tile_length),
             "stride": stride,
-            "target_total": cols * rows,
+            "stride_xy": (stride, stride),
+            "overlap_px": overlap_px,
+            "overlap_px_xy": (overlap_px, overlap_px),
+            "overlap_ratio": actual_overlap_ratio,
+            "overlap_ratio_x": actual_overlap_ratio,
+            "overlap_ratio_y": actual_overlap_ratio,
+            "overlap_ratio_requested": requested_overlap_ratio,
+            "target_total": a * b,
+            "tiles_total": actual_total,
             "actual_total": actual_total,
             "baseline_total": baseline_total,
-            "redundancy_reduction": redundancy_reduction,
+            "tile_count_reduction": tile_count_reduction,
+            "redundancy_reduction": redundancy_ratio,
+            "redundancy_ratio": redundancy_ratio,
             "time_reduction": time_reduction,
             "longest_side": longest_side,
             "ls_threshold": ls_threshold,
+            "resize_target": self.config.resize_output or (640, 640),
         }
 
         return bboxes, summary
@@ -411,14 +518,38 @@ class TilingEngine:
         return positions
 
     def _log_adaptive_plan(self, summary: Dict[str, Any]) -> None:
+        rows = int(summary.get("rows") or summary.get("b") or 0)
+        cols = int(summary.get("cols") or summary.get("a") or 0)
+        tiles_total = summary.get("tiles_total", summary.get("actual_total", 0))
+
+        tile_w, tile_h = summary.get("tile_size") or (
+            summary.get("tile_length", 0),
+            summary.get("tile_length", 0),
+        )
+        stride_x, stride_y = summary.get("stride_xy") or (
+            summary.get("stride", 0),
+            summary.get("stride", 0),
+        )
+        overlap_px_x, overlap_px_y = summary.get("overlap_px_xy") or (
+            summary.get("overlap_px", 0),
+            summary.get("overlap_px", 0),
+        )
+        overlap_ratio_x = summary.get("overlap_ratio_x", summary.get("overlap_ratio", 0.0))
+        overlap_ratio_y = summary.get("overlap_ratio_y", overlap_ratio_x)
+        redundancy_pct = summary.get("redundancy_reduction", 0.0) * 100
+        time_pct = summary.get("time_reduction", 0.0) * 100
+        layout = summary.get("layout", "?")
+        ls_threshold = summary.get("ls_threshold", 0)
+        longest = summary.get("longest_side", 0)
         print(
             "  [ASAHI] plan "
-            f"{summary.get('rows', 0)}x{summary.get('cols', 0)} "
-            f"tiles={summary.get('actual_total', 0)} "
-            f"tile={summary.get('tile_length', 0)}px "
-            f"overlap={summary.get('overlap_ratio', 0.0):.2f} "
-            f"redundancy={summary.get('redundancy_reduction', 0.0)*100:.1f}% "
-            f"time_savings~{summary.get('time_reduction', 0.0)*100:.1f}%"
+            f"{rows}x{cols} tiles={tiles_total} "
+            f"tile={int(tile_w)}x{int(tile_h)}px "
+            f"stride={int(stride_x)}x{int(stride_y)}px "
+            f"overlap={overlap_ratio_x:.2f}/{overlap_ratio_y:.2f} "
+            f"({int(overlap_px_x)}px/{int(overlap_px_y)}px) "
+            f"redundancy={redundancy_pct:.1f}% time_savings~{time_pct:.1f}% "
+            f"| layout={layout} LS={int(round(ls_threshold))} longest={int(round(longest))}"
         )
 
     def _compute_slice_bboxes(self, image_width: int, image_height: int) -> List[Tuple[int, int, int, int]]:
