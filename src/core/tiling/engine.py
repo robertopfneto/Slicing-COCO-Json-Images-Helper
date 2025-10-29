@@ -345,8 +345,10 @@ class TilingEngine:
         (6 or 12) depending on the adaptive threshold `LS`.
 
         Behaviour summary:
-          • If max(W, H) ≤ LS → compact mode (approx. 6 tiles)
-          • If max(W, H) > LS → expanded mode (approx. 12 tiles)
+          • If max(W, H) ≤ LS → compact mode (approx. 6 tiles baseline)
+          • If max(W, H) > LS → expanded mode (approx. 12 tiles baseline)
+          • Additional rows/cols are added automatically when the 640px limit
+            would otherwise leave uncovered regions.
           • Each tile is cropped with overlap ratio l and later resized to 640×640.
           • Redundancy and time reduction are computed per ASAHI Eq. (8–10).
         """
@@ -368,11 +370,9 @@ class TilingEngine:
         if layout_mode == "compact":
             denom_w = max(3 - 2 * overlap_ratio, epsilon)
             denom_h = max(2 - overlap_ratio, epsilon)
-            base_cols, base_rows = 3, 2
         else:
             denom_w = max(4 - 3 * overlap_ratio, epsilon)
             denom_h = max(3 - 2 * overlap_ratio, epsilon)
-            base_cols, base_rows = 4, 3
 
         p_w = W / denom_w + 1.0
         p_h = H / denom_h + 1.0
@@ -405,21 +405,24 @@ class TilingEngine:
                 positions[-1] = int(max_offset)
             return positions or [0]
 
-        cols = max(
-            base_cols,
-            int(math.ceil(max(image_width - tile_length, 0) / max(stride, 1))) + 1
+        max_stride = max(stride, 1)
+        cols_estimate = (
+            int(math.ceil(max(image_width - tile_length, 0) / max_stride)) + 1
             if image_width > tile_length
-            else 1,
+            else 1
         )
-        rows = max(
-            base_rows,
-            int(math.ceil(max(image_height - tile_length, 0) / max(stride, 1))) + 1
+        rows_estimate = (
+            int(math.ceil(max(image_height - tile_length, 0) / max_stride)) + 1
             if image_height > tile_length
-            else 1,
+            else 1
         )
 
-        x_positions = _compute_axis_positions(image_width, tile_length, stride, cols)
-        y_positions = _compute_axis_positions(image_height, tile_length, stride, rows)
+        x_positions = _compute_axis_positions(
+            image_width, tile_length, stride, max(cols_estimate, 1)
+        )
+        y_positions = _compute_axis_positions(
+            image_height, tile_length, stride, max(rows_estimate, 1)
+        )
 
         a = len(x_positions)
         b = len(y_positions)
