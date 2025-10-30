@@ -13,7 +13,7 @@ class TilingConfig:
     min_object_coverage: float = 0.3
     min_area_ratio: float = 0.1
     output_format: str = "COCO"
-    resize_output: Optional[Tuple[int, int]] = None  # If set, resize tiles to this size after tiling
+    resize_output: Optional[Tuple[int, int]] = (640, 640)  # Defaults to 640x640 to keep tile dimensions uniform
     ignore_negative_samples: bool = True
     verbose: bool = False
     exif_fix: bool = True
@@ -70,9 +70,13 @@ class AppConfig:
                 min_area_ratio=float(os.getenv("MIN_AREA_RATIO", 0.1)),
                 output_format=os.getenv("OUTPUT_FORMAT", "COCO"),
                 resize_output=(
-                    (int(os.getenv("RESIZE_WIDTH")), int(os.getenv("RESIZE_HEIGHT")))
-                    if os.getenv("RESIZE_WIDTH") and os.getenv("RESIZE_HEIGHT")
-                    else None
+                    None
+                    if os.getenv("RESIZE_OUTPUT", "").lower() in {"0", "false", "none", "off"}
+                    else (
+                        (int(os.getenv("RESIZE_WIDTH")), int(os.getenv("RESIZE_HEIGHT")))
+                        if os.getenv("RESIZE_WIDTH") and os.getenv("RESIZE_HEIGHT")
+                        else (640, 640)
+                    )
                 ),
                 ignore_negative_samples=os.getenv("IGNORE_NEGATIVE_SAMPLES", "true").lower()
                 in {"1", "true", "yes"},
@@ -96,3 +100,5 @@ class AppConfig:
                 fold_seed=int(os.getenv("FOLD_SEED", 42))
             )
         )
+
+
