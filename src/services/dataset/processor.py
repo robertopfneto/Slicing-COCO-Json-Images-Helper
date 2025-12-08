@@ -3,6 +3,7 @@ import shutil
 import time
 import random
 import statistics
+import json
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ class DatasetProcessor:
             "baseline_tiles": 0.0,
             "adaptive_tiles": 0.0,
         }
+        self._tiling_plan_written = False
 
         # Ensure base output directory exists
         os.makedirs(config.dataset.output_path, exist_ok=True)
@@ -156,6 +158,7 @@ class DatasetProcessor:
             if self.config.tiling.adaptive_mode:
                 plan_summary = self.tiling_engine.get_last_plan_summary()
                 self._accumulate_adaptive_metrics(plan_summary)
+                self._maybe_write_tiling_plan(plan_summary)
 
             print(f"  Generated {image_tile_count} tiles")
             processed_images += 1
@@ -390,6 +393,37 @@ class DatasetProcessor:
         print(f"  Avg ASAHI tiles per image:   {avg_adaptive:.2f}")
         print(f"  Estimated redundancy drop:   {redundancy * 100:.1f}%")
         print()
+
+    def _maybe_write_tiling_plan(self, plan_summary: Dict[str, Any]) -> None:
+        """Persist tiling plan metadata for later reconstruction if available."""
+        if self._tiling_plan_written:
+            return
+        if not plan_summary or plan_summary.get("mode") != "ASAHI-AutoOverlap":
+            return
+
+        target_size = plan_summary.get("target_reconstruction_size", (0, 0))
+        if isinstance(target_size, tuple):
+            target_size = list(target_size)
+
+        plan_payload = {
+            "tile_size": int(plan_summary.get("tile_size", 0) or 0),
+            "stride_x": int(plan_summary.get("stride_x", 0) or 0),
+            "stride_y": int(plan_summary.get("stride_y", 0) or 0),
+            "overlap_ratio_x": float(plan_summary.get("overlap_ratio_x", 0.0) or 0.0),
+            "overlap_ratio_y": float(plan_summary.get("overlap_ratio_y", 0.0) or 0.0),
+            "target_reconstruction_size": target_size,
+        }
+
+        output_path = os.path.join(self.config.dataset.output_path, "tiling_plan.json")
+        try:
+            with open(output_path, "w", encoding="utf-8") as fp:
+                json.dump(plan_payload, fp, indent=2)
+            self._tiling_plan_written = True
+            if self.config.tiling.verbose:
+                print(f"[ASAHI-AutoOverlap] Saved tiling plan metadata to {output_path}")
+        except OSError:
+            if self.config.tiling.verbose:
+                print(f"[ASAHI-AutoOverlap] Failed to save tiling plan at {output_path}")
 
     def _prepare_output_root(self) -> str:
         tile_root = os.path.join(self.config.dataset.output_path, "tile")

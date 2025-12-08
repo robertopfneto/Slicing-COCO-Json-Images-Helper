@@ -100,3 +100,4 @@ Thumbs.db
 environment_backup.yml
 ./eng_claude.
 dataset
+*/__pycache__

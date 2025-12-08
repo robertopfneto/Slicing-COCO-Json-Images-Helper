@@ -224,7 +224,10 @@ class TilingEngine:
         img_width, img_height = image.size
 
         if self.config.adaptive_mode:
-            slice_bboxes, plan_summary = self._compute_asahi_tile_plan(img_width, img_height)
+            if getattr(self.config, "auto_overlap", True):
+                slice_bboxes, plan_summary = self._compute_auto_tile_plan(img_width, img_height)
+            else:
+                slice_bboxes, plan_summary = self._compute_asahi_tile_plan(img_width, img_height)
         else:
             slice_bboxes = self._compute_slice_bboxes(img_width, img_height)
             plan_summary = {
@@ -500,6 +503,72 @@ class TilingEngine:
         }
 
         return bboxes, summary
+
+    def _compute_auto_tile_plan(
+        self, image_width: int, image_height: int
+    ) -> Tuple[List[Tuple[int, int, int, int]], Dict[str, Any]]:
+        """
+        Adaptive overlap plan that keeps tile size <= 640px and computes
+        stride/overlap so the grid exactly covers the original image.
+        """
+        W = float(max(image_width, 1))
+        H = float(max(image_height, 1))
+        p = int(max(1, min(self.config.restrict_size or 640, 640)))
+
+        n_x = int(math.ceil(W / p))
+        n_y = int(math.ceil(H / p))
+
+        overlap_x = (n_x * p - W) / (n_x - 1) if n_x > 1 else 0.0
+        overlap_y = (n_y * p - H) / (n_y - 1) if n_y > 1 else 0.0
+
+        overlap_ratio_x = overlap_x / p if p else 0.0
+        overlap_ratio_y = overlap_y / p if p else 0.0
+
+        stride_x = int(round(p - overlap_x))
+        stride_y = int(round(p - overlap_y))
+        stride_x = max(stride_x, 1)
+        stride_y = max(stride_y, 1)
+
+        x_positions = [int(min(i * stride_x, max(W - p, 0))) for i in range(n_x)]
+        y_positions = [int(min(j * stride_y, max(H - p, 0))) for j in range(n_y)]
+
+        bboxes: List[Tuple[int, int, int, int]] = []
+        for y in y_positions:
+            for x in x_positions:
+                x2 = int(min(W, x + p))
+                y2 = int(min(H, y + p))
+                bboxes.append((int(x), int(y), x2, y2))
+
+        baseline_bboxes = self._compute_slice_bboxes(int(W), int(H))
+        baseline_total = len(baseline_bboxes) if baseline_bboxes else len(bboxes)
+
+        plan_summary = {
+            "mode": "ASAHI-AutoOverlap",
+            "tile_size": p,
+            "n_x": n_x,
+            "n_y": n_y,
+            "overlap_px_x": overlap_x,
+            "overlap_px_y": overlap_y,
+            "overlap_ratio_x": round(overlap_ratio_x, 3),
+            "overlap_ratio_y": round(overlap_ratio_y, 3),
+            "stride_x": stride_x,
+            "stride_y": stride_y,
+            "target_reconstruction_size": (int(W), int(H)),
+            "total_tiles": len(bboxes),
+            "tiles_total": len(bboxes),
+            "actual_total": len(bboxes),
+            "baseline_total": baseline_total,
+        }
+
+        if self.config.verbose:
+            print(
+                f"[ASAHI-AutoOverlap] grid={n_y}x{n_x} tiles={len(bboxes)} "
+                f"tile={p}px stride=({stride_x},{stride_y}) "
+                f"overlap=({overlap_ratio_x:.3f},{overlap_ratio_y:.3f}) "
+                f"→ reconstructable {int(W)}x{int(H)}px"
+            )
+
+        return bboxes, plan_summary
 
     def _build_axis_positions(
         self, axis_size: int, tile_length: int, stride: int, target_count: int

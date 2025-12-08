@@ -34,6 +34,7 @@ class TilingConfig:
     verbose: bool = False
     exif_fix: bool = True
     adaptive_mode: bool = True
+    auto_overlap: bool = True
     restrict_size: int = 640
     overlap_ratio: float = 0.15
     ls_threshold: float = 0.0
@@ -108,6 +109,7 @@ class AppConfig:
                 verbose=_env_bool("SAHI_VERBOSE", False),
                 exif_fix=_env_bool("SAHI_EXIF_FIX", True),
                 adaptive_mode=_env_bool("ASAHI_ADAPTIVE_MODE", True),
+                auto_overlap=_env_bool("ASAHI_AUTO_OVERLAP", True),
                 restrict_size=restrict_size,
                 overlap_ratio=overlap_ratio,
                 ls_threshold=ls_threshold,
