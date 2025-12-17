@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         type=str,
-        default="./dataset/all/train",
+        default="./dataset/train",
         help="Path to directory containing original images and _annotations.coco.json",
     )
     parser.add_argument(
@@ -80,6 +80,24 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
+
+
+def resolve_input_dir(raw_path: Path) -> Path:
+    """Return a directory that actually contains _annotations.coco.json."""
+    annotations_here = raw_path / "_annotations.coco.json"
+    if annotations_here.exists():
+        return raw_path
+
+    train_candidate = raw_path / "train"
+    annotations_in_train = train_candidate / "_annotations.coco.json"
+    if annotations_in_train.exists():
+        print(f"ℹ️  Detected nested train/ folder, using: {train_candidate}")
+        return train_candidate
+
+    raise FileNotFoundError(
+        f"Could not find _annotations.coco.json in {raw_path} or {train_candidate}. "
+        "Point --input to the directory that directly contains your images and annotations."
+    )
 
 
 def ensure_output_dir(path: Path, overwrite: bool) -> None:
@@ -158,13 +176,8 @@ def build_manifest_entry(
 def main() -> None:
     args = parse_args()
 
-    input_dir = Path(args.input)
-    if not input_dir.exists():
-        raise FileNotFoundError(f"Input directory not found: {input_dir}")
-
+    input_dir = resolve_input_dir(Path(args.input))
     annotations_path = input_dir / "_annotations.coco.json"
-    if not annotations_path.exists():
-        raise FileNotFoundError(f"COCO annotations not found: {annotations_path}")
 
     output_dir = Path(args.output)
     ensure_output_dir(output_dir, args.overwrite)
@@ -177,6 +190,9 @@ def main() -> None:
 
     manifests_dir = output_dir / "manifests"
     manifests_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"📂 Using input directory: {input_dir}")
+    print(f"   Output will be saved to: {output_dir}")
 
     print("📥 Loading COCO dataset...")
     dataset = CocoDataset.from_json(str(annotations_path))
@@ -274,7 +290,21 @@ def main() -> None:
     total_tiles = len(tile_entries)
     positives = sum(1 for entry in tile_entries.values() if entry["metadata"]["is_positive"])
     negatives = total_tiles - positives
+    grid_info = tiling_engine.last_grid_info
     print(f"✅ Generated {total_tiles} tiles ({positives} positives | {negatives} negatives)")
+    if grid_info:
+        print(
+            "🧮 Grid:"
+            f" {grid_info['cols']}x{grid_info['rows']} tiles"
+            f" | stride {grid_info['stride_x']}x{grid_info['stride_y']} px"
+            f" | overlap {grid_info['overlap_x']}x{grid_info['overlap_y']} px"
+            f" | image {grid_info['image_width']}x{grid_info['image_height']} px"
+        )
+        if grid_info.get("redundancy_x") or grid_info.get("redundancy_y"):
+            print(
+                f"   Redundancy at borders: {grid_info['redundancy_x']} px (width) | "
+                f"{grid_info['redundancy_y']} px (height)"
+            )
 
     # Prepare data for GroupKFold
     image_ids_ordered = [img.id for img in image_order]

@@ -9,24 +9,57 @@ from src.models.coco import CocoAnnotation
 class TilingEngine:
     def __init__(self, config: TilingConfig):
         self.config = config
+        self.last_grid_info = None
     
+    def _axis_positions(self, img_dim: int, tile_dim: int) -> Tuple[List[int], int, int, int]:
+        """Return tile start positions along one axis plus effective stride/overlap."""
+        stride = max(1, tile_dim - self.config.overlap)
+
+        positions = list(range(0, max(img_dim - tile_dim + 1, 1), stride))
+        if positions and positions[-1] != img_dim - tile_dim:
+            positions.append(img_dim - tile_dim)
+
+        positions = sorted(set(positions))
+        stride_effective = stride if len(positions) > 1 else tile_dim
+        overlap_effective = max(0, tile_dim - stride_effective)
+        redundancy = 0
+        if positions:
+            redundancy = max(
+                0, (len(positions) - 1) * stride_effective + tile_dim - img_dim
+            )
+
+        return positions, stride_effective, overlap_effective, redundancy
+
     def generate_tiles(self, image: Image.Image) -> Generator[Tuple[Image.Image, Tuple[int, int], float], None, None]:
         """Generate tiles from an image with optional overlap and resizing."""
         img_width, img_height = image.size
         tile_width, tile_height = self.config.tile_size
-        overlap = self.config.overlap
-        
-        step_x = tile_width - overlap
-        step_y = tile_height - overlap
-        
+        x_positions, step_x, overlap_x, redundancy_x = self._axis_positions(img_width, tile_width)
+        y_positions, step_y, overlap_y, redundancy_y = self._axis_positions(img_height, tile_height)
+
+        self.last_grid_info = {
+            "cols": len(x_positions),
+            "rows": len(y_positions),
+            "stride_x": step_x,
+            "stride_y": step_y,
+            "overlap_x": overlap_x,
+            "overlap_y": overlap_y,
+            "tile_width": tile_width,
+            "tile_height": tile_height,
+            "image_width": img_width,
+            "image_height": img_height,
+            "redundancy_x": redundancy_x,
+            "redundancy_y": redundancy_y,
+        }
+
         # Calculate scaling factor if resize is enabled
         scale_factor = 1.0
         if self.config.resize_output:
             resize_width, resize_height = self.config.resize_output
             scale_factor = min(resize_width / tile_width, resize_height / tile_height)
-        
-        for y in range(0, img_height - tile_height + 1, step_y):
-            for x in range(0, img_width - tile_width + 1, step_x):
+
+        for y in y_positions:
+            for x in x_positions:
                 tile = image.crop((x, y, x + tile_width, y + tile_height))
                 
                 # Resize tile if requested
@@ -34,32 +67,6 @@ class TilingEngine:
                     tile = tile.resize(self.config.resize_output, Image.LANCZOS)
                 
                 yield tile, (x, y), scale_factor
-        
-        # Handle edge cases - tiles that don't fit perfectly
-        if img_width % step_x != 0:
-            x = img_width - tile_width
-            for y in range(0, img_height - tile_height + 1, step_y):
-                tile = image.crop((x, y, x + tile_width, y + tile_height))
-                if self.config.resize_output:
-                    tile = tile.resize(self.config.resize_output, Image.LANCZOS)
-                yield tile, (x, y), scale_factor
-        
-        if img_height % step_y != 0:
-            y = img_height - tile_height
-            for x in range(0, img_width - tile_width + 1, step_x):
-                tile = image.crop((x, y, x + tile_width, y + tile_height))
-                if self.config.resize_output:
-                    tile = tile.resize(self.config.resize_output, Image.LANCZOS)
-                yield tile, (x, y), scale_factor
-        
-        # Corner tile if needed
-        if img_width % step_x != 0 and img_height % step_y != 0:
-            x = img_width - tile_width
-            y = img_height - tile_height
-            tile = image.crop((x, y, x + tile_width, y + tile_height))
-            if self.config.resize_output:
-                tile = tile.resize(self.config.resize_output, Image.LANCZOS)
-            yield tile, (x, y), scale_factor
     
     def transform_annotations(self, annotations: List[CocoAnnotation], 
                             tile_offset: Tuple[int, int], 

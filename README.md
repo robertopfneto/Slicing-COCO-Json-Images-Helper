@@ -60,7 +60,7 @@ For high-resolution datasets (e.g., 4032×2268 insect imagery) that require tili
 
 ```bash
 python build_crossval_tiles.py \
-  --input ./dataset/all/train \
+  --input ./dataset/train \
   --output ./output_crossval \
   --tile-size 640 640 \
   --overlap 0 \
