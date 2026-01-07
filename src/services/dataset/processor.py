@@ -47,11 +47,6 @@ class DatasetProcessor:
             raise FileNotFoundError(f"Annotations file not found: {annotations_path}")
 
         original_dataset = CocoDataset.from_json(annotations_path)
-        if self.config.tiling.ignore_negative_samples:
-            original_dataset, removed_images = self._filter_unannotated_images(original_dataset)
-            if removed_images:
-                print(f"Removed {len(removed_images)} images without annotations before tiling")
-                print()
         total_images = len(original_dataset.images)
         total_annotations = len(original_dataset.annotations)
 
@@ -80,6 +75,8 @@ class DatasetProcessor:
 
         processed_images = 0
         skipped_images = 0
+        skipped_train_tiles = 0
+        negative_tiles_by_split = {"val": 0, "test": 0}
         unique_tiles = 0
         unique_annotations = 0
 
@@ -100,10 +97,12 @@ class DatasetProcessor:
             ]
             print(f"  Annotations: {len(image_annotations)}")
 
-            if self.config.tiling.ignore_negative_samples and not image_annotations:
-                print("  Skipping image (no annotations and negative samples ignored)")
+            skip_train_negative = (
+                self.config.tiling.ignore_negative_samples and not image_annotations
+            )
+            if skip_train_negative:
+                print("  No annotations; skipping tiles for train splits only")
                 skipped_images += 1
-                continue
 
             image_tile_count = 0
             with Image.open(image_path) as pil_image:
@@ -124,6 +123,11 @@ class DatasetProcessor:
 
                     for fold_idx in range(1, num_folds + 1):
                         split_name = role_lookup[fold_idx][original_image.id]
+                        if skip_train_negative and split_name == "train":
+                            skipped_train_tiles += 1
+                            continue
+                        if skip_train_negative and split_name in negative_tiles_by_split:
+                            negative_tiles_by_split[split_name] += 1
                         split_dir = self._ensure_split_dir(tile_root, fold_idx, split_name)
                         split_store = fold_storage[fold_idx][split_name]
 
@@ -212,7 +216,12 @@ class DatasetProcessor:
         print(f"  Unique transformed annotations: {unique_annotations}")
         print(f"  Total tile copies across folds: {total_fold_tiles}")
         print(f"  Total annotation copies across folds: {total_fold_annotations}")
-        print(f"  Skipped images: {skipped_images}")
+        print(f"  Images without annotations (train skipped): {skipped_images}")
+        print(f"  Train tiles skipped (no annotations): {skipped_train_tiles}")
+        print(
+            "  Negative tiles kept (val/test): "
+            f"{negative_tiles_by_split['val']} val, {negative_tiles_by_split['test']} test"
+        )
         print(f"  Cross-validation folds: {num_folds}")
         print(f"  Processing time: {elapsed_mins}m {elapsed_secs}s")
         if self.config.tiling.adaptive_mode:
