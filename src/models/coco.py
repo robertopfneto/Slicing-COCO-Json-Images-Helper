@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import json
+from pathlib import Path
 
 
 @dataclass
@@ -61,8 +62,18 @@ class CocoDataset:
     
     @classmethod
     def from_json(cls, json_path: str):
-        with open(json_path, 'r') as f:
-            data = json.load(f)
+        path = Path(json_path)
+        if not path.exists():
+            raise FileNotFoundError(f"JSON file not found: {json_path}")
+
+        content = path.read_text().strip()
+        if not content:
+            raise ValueError(f"JSON file is empty: {json_path}")
+
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON in {json_path}: {exc}") from exc
         
         # Helper function to safely create dataclass instances
         def safe_create_instance(dataclass_type, data_dict):

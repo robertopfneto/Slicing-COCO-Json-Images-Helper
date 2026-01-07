@@ -151,10 +151,10 @@ def main():
                 sys.exit(1)
         
         print()
-        print("🏁 Dataset processing completed successfully!")
+        print("Dataset processing completed successfully!")
         
     except KeyboardInterrupt:
-        print("\n\n⚠️  Processing interrupted by user")
+        print("\n\n Processing interrupted by user")
         print("   Partial results may be available in the output directory")
         sys.exit(1)
     except Exception as e:
