@@ -32,6 +32,10 @@ def main():
                        help="Resize output tiles to this size (width height)")
     parser.add_argument("--auto-slice", action="store_true",
                        help="Enable SAHI auto slice resolution heuristics")
+    parser.add_argument("--asahi-auto-overlap", action="store_true",
+                       help="Enable ASAHI auto-overlap grid (default)")
+    parser.add_argument("--no-asahi-auto-overlap", action="store_true",
+                       help="Disable ASAHI auto-overlap grid (use formula-based p)")
     parser.add_argument("--overlap-height-ratio", type=float,
                        help="Fractional overlap ratio applied along the vertical axis")
     parser.add_argument("--overlap-width-ratio", type=float,
@@ -42,6 +46,8 @@ def main():
                        help="Skip images without annotations when slicing")
     parser.add_argument("--adaptive-mode", action="store_true",
                        help="Enable ASAHI adaptive slicing mode")
+    parser.add_argument("--no-adaptive-mode", action="store_true",
+                       help="Disable ASAHI adaptive slicing mode")
     parser.add_argument("--restrict-size", type=int,
                        help="Set base restrict size used for ASAHI LS calculation")
     parser.add_argument("--overlap-ratio", type=float,
@@ -81,6 +87,10 @@ def main():
         config.tiling.resize_output = tuple(args.resize_output)
     if args.auto_slice:
         config.tiling.auto_slice_resolution = True
+    if args.asahi_auto_overlap:
+        config.tiling.auto_overlap = True
+    if args.no_asahi_auto_overlap:
+        config.tiling.auto_overlap = False
     if args.overlap_height_ratio is not None:
         config.tiling.overlap_height_ratio = args.overlap_height_ratio
     if args.overlap_width_ratio is not None:
@@ -91,6 +101,8 @@ def main():
         config.tiling.ignore_negative_samples = True
     if args.adaptive_mode:
         config.tiling.adaptive_mode = True
+    if args.no_adaptive_mode:
+        config.tiling.adaptive_mode = False
     if args.restrict_size is not None:
         config.tiling.restrict_size = max(1, args.restrict_size)
     if args.overlap_ratio is not None:
@@ -141,6 +153,7 @@ def main():
         print(f"  Restrict size: {config.tiling.restrict_size}")
         print(f"  Overlap ratio: {config.tiling.overlap_ratio:.3f}")
         print(f"  LS threshold (auto): {config.tiling.ls_threshold:.2f}")
+        print(f"  Auto-overlap grid: {'enabled' if config.tiling.auto_overlap else 'disabled'}")
         print(f"  Cluster-DIoU-NMS: {'enabled' if config.tiling.cluster_diou_nms else 'disabled'}")
     print(
         "Cross-validation folds: "
