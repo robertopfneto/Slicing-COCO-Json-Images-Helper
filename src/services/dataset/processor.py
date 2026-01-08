@@ -79,6 +79,8 @@ class DatasetProcessor:
         negative_tiles_by_split = {"val": 0, "test": 0}
         unique_tiles = 0
         unique_annotations = 0
+        total_tile_area = 0
+        total_original_area = 0
 
         print("Starting image processing...")
         print("=" * 60)
@@ -106,6 +108,8 @@ class DatasetProcessor:
 
             image_tile_count = 0
             with Image.open(image_path) as pil_image:
+                image_width, image_height = pil_image.size
+                total_original_area += image_width * image_height
                 for tile, slice_bbox, scale_factor in self.tiling_engine.generate_tiles(pil_image):
                     image_tile_count += 1
                     unique_tiles += 1
@@ -113,6 +117,7 @@ class DatasetProcessor:
                     tile_offset = (slice_bbox[0], slice_bbox[1])
                     tile_filename = f"{Path(original_image.file_name).stem}_tile_{tile_offset[0]}_{tile_offset[1]}.jpg"
                     tile_width, tile_height = tile.size
+                    total_tile_area += tile_width * tile_height
 
                     tile_annotations = self.tiling_engine.transform_annotations(
                         image_annotations, slice_bbox, scale_factor
@@ -216,6 +221,13 @@ class DatasetProcessor:
         print(f"  Unique transformed annotations: {unique_annotations}")
         print(f"  Total tile copies across folds: {total_fold_tiles}")
         print(f"  Total annotation copies across folds: {total_fold_annotations}")
+        if total_tile_area > 0:
+            redundant_area = max(0, total_tile_area - total_original_area)
+            redundancy_pct = (redundant_area / total_tile_area) * 100
+            print(f"  Total original area (px): {total_original_area}")
+            print(f"  Total tile area (px): {total_tile_area}")
+            print(f"  Redundant area (px): {redundant_area}")
+            print(f"  Redundant area (% of tiles): {redundancy_pct:.2f}%")
         print(f"  Images without annotations (train skipped): {skipped_images}")
         print(f"  Train tiles skipped (no annotations): {skipped_train_tiles}")
         print(
